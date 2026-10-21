@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - POS System</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 450px;
+        }
+        h2 {
+            margin-bottom: 20px;
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        input:focus {
+            border-color: #007BFF;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 11px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            word-break: break-all;
+            display: none;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .link-text {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .link-text a {
+            color: #007BFF;
+            text-decoration: none;
+        }
+        .link-text a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <h2>System Login</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" required placeholder="example@domain.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required placeholder="********">
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <div id="responseMessage" class="message"></div>
+        <div class="link-text">
+            Don't have an account? <a href="register.html">Register here</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const msgBox = document.getElementById('responseMessage');
+
+            const payload = {
+                action: "1102",
+                email: email,
+                password: password
+            };
+
+            try {
+                const response = await fetch('../../../index.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                
+                // Backend က Response Header ထဲမှာ Authorization သို့မဟုတ် X-TOKEN နဲ့ ပို့ပေးထားတာကို ဖမ်းယူခြင်း
+                const authHeader = response.headers.get('Authorization') || response.headers.get('X-TOKEN');
+
+                msgBox.style.display = 'block';
+                if (result.status === 200) {
+                    msgBox.className = 'message success';
+                    
+                    if (authHeader) {
+                        localStorage.setItem('token', authHeader);
+                        msgBox.innerHTML = `<b>${result.message}</b><br><br><b>JWT Token:</b><br><span style="font-family: monospace; font-size: 11px;">${authHeader}</span>`;
+                    } else {
+                        msgBox.innerText = result.message + " (Token header not found)";
+                    }
+                } else {
+                    msgBox.className = 'message error';
+                    msgBox.innerText = result.message || "Login failed!";
+                }
+            } catch (error) {
+                msgBox.style.display = 'block';
+                msgBox.className = 'message error';
+                msgBox.innerText = "Connection error to server!";
+            }
+        });
+    </script>
+</body>
+</html>

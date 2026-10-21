@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shop API Tester Dashboard</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --input-bg: #0f172a;
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 16px 24px;
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-title h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .badge {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        /* Global Config Section */
+        .config-bar {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 16px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 20px;
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        input[type="text"], input[type="url"], textarea {
+            background-color: var(--input-bg);
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+            padding: 10px 14px;
+            border-radius: 8px;
+            outline: none;
+            font-size: 0.9rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        input[type="text"]:focus, input[type="url"]:focus, textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+
+        /* Tabs System */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background-color: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .tab-btn.active {
+            background-color: var(--accent);
+            color: white;
+        }
+
+        /* Content Dashboard Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            flex: 1;
+        }
+
+        @media (max-width: 900px) {
+            .config-bar {
+                grid-template-columns: 1fr;
+            }
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cards */
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+
+        .card-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 12px;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* Buttons */
+        .btn {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+
+        /* File Upload Preview */
+        .file-upload-box {
+            border: 2px dashed var(--card-border);
+            padding: 16px;
+            border-radius: 8px;
+            text-align: center;
+            background-color: var(--input-bg);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .file-upload-box:hover {
+            border-color: var(--accent);
+        }
+
+        .file-upload-box input {
+            display: none;
+        }
+
+        .preview-img {
+            max-width: 100%;
+            max-height: 120px;
+            margin-top: 10px;
+            border-radius: 6px;
+            display: none;
+            object-fit: contain;
+        }
+
+        /* Response Display */
+        .response-box {
+            background-color: var(--input-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            color: #38bdf8;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            flex: 1;
+            min-height: 250px;
+        }
+
+        .status-badge {
+            font-size: 0.8rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: none;
+        }
+
+        .status-badge.success {
+            display: inline-block;
+            background-color: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .status-badge.error {
+            display: inline-block;
+            background-color: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        .btn-copy {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            border: none;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-copy:hover {
+            color: var(--text-main);
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="header-title">
+            <h1>Shop API Tester</h1>
+            <span class="badge">Action Codes: 1000 - 1003</span>
+        </div>
+        <div id="connectionStatus" style="font-size: 0.85rem; color: var(--text-muted);">
+            Ready
+        </div>
+    </header>
+
+    <!-- Global API Configuration -->
+    <div class="config-bar">
+        <div class="form-group">
+            <label for="apiUrl">API Endpoint URL</label>
+            <input type="url" id="apiUrl" value="http://localhost/stock/pos/secure/index.php" placeholder="https://example.com/api/index.php">
+        </div>
+        <div class="form-group">
+            <label for="bearerToken">Bearer JWT Token (Stored automatically)</label>
+            <input type="text" id="bearerToken" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+        </div>
+    </div>
+
+    <!-- Actions Tab Bar -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tab1000')">Add Shop (1000)</button>
+        <button class="tab-btn" onclick="switchTab('tab1001')">Update Shop (1001)</button>
+        <button class="tab-btn" onclick="switchTab('tab1002')">Delete Shop (1002)</button>
+        <button class="tab-btn" onclick="switchTab('tab1003')">Get Shops (1003)</button>
+    </div>
+
+    <!-- Main Dashboard Grid -->
+    <div class="dashboard-grid">
+        <!-- Request Form Column -->
+        <div class="card">
+
+            <!-- TAB 1000: ADD SHOP -->
+            <form id="tab1000" class="tab-content active" onsubmit="handleRequest(event, '1000')">
+                <div class="card-header">Action 1000: Add Shop</div>
+                
+                <div class="form-group">
+                    <label>Shop Name *</label>
+                    <input type="text" id="add_shop_name" required placeholder="e.g. City Mall Store">
+                </div>
+
+                <div class="form-group">
+                    <label>Owner Name *</label>
+                    <input type="text" id="add_owner_name" required placeholder="e.g. John Doe">
+                </div>
+
+                <div class="form-group">
+                    <label>Phone No *</label>
+                    <input type="text" id="add_phone_no" required placeholder="e.g. 09123456789">
+                </div>
+
+                <div class="form-group">
+                    <label>Address *</label>
+                    <textarea id="add_address" rows="3" required placeholder="e.g. No 123, Main Road, Yangon"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Shop Logo / Image (Optional Base64 Upload)</label>
+                    <div class="file-upload-box" onclick="document.getElementById('add_image_file').click()">
+                        <span id="add_file_label" style="font-size: 0.85rem; color: var(--text-muted);">Click to browse image file</span>
+                        <input type="file" id="add_image_file" accept="image/*" onchange="handleImageUpload(event, 'add')">
+                        <img id="add_preview" class="preview-img" alt="Preview">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Send Add Shop Request</button>
+            </form>
+
+            <!-- TAB 1001: UPDATE SHOP -->
+            <form id="tab1001" class="tab-content" onsubmit="handleRequest(event, '1001')">
+                <div class="card-header">Action 1001: Update Shop</div>
+
+                <div class="form-group">
+                    <label>Shop UUID *</label>
+                    <input type="text" id="update_uuid" required placeholder="Target Shop UUID">
+                </div>
+                
+                <div class="form-group">
+                    <label>Shop Name</label>
+                    <input type="text" id="update_shop_name" placeholder="Updated Shop Name">
+                </div>
+
+                <div class="form-group">
+                    <label>Owner Name</label>
+                    <input type="text" id="update_owner_name" placeholder="Updated Owner Name">
+                </div>
+
+                <div class="form-group">
+                    <label>Phone No</label>
+                    <input type="text" id="update_phone_no" placeholder="Updated Phone Number">
+                </div>
+
+                <div class="form-group">
+                    <label>Address</label>
+                    <textarea id="update_address" rows="3" placeholder="Updated Address"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Shop Logo / Image (Optional)</label>
+                    <div class="file-upload-box" onclick="document.getElementById('update_image_file').click()">
+                        <span id="update_file_label" style="font-size: 0.85rem; color: var(--text-muted);">Click to browse new image file</span>
+                        <input type="file" id="update_image_file" accept="image/*" onchange="handleImageUpload(event, 'update')">
+                        <img id="update_preview" class="preview-img" alt="Preview">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">Send Update Shop Request</button>
+            </form>
+
+            <!-- TAB 1002: DELETE SHOP -->
+            <form id="tab1002" class="tab-content" onsubmit="handleRequest(event, '1002')">
+                <div class="card-header">Action 1002: Delete Shop</div>
+
+                <div class="form-group">
+                    <label>Shop UUID *</label>
+                    <input type="text" id="delete_uuid" required placeholder="e.g. 7f8a9b2c3d4e...">
+                </div>
+
+                <button type="submit" class="btn btn-danger">Delete Shop</button>
+            </form>
+
+            <!-- TAB 1003: GET SHOPS LIST -->
+            <form id="tab1003" class="tab-content" onsubmit="handleRequest(event, '1003')">
+                <div class="card-header">Action 1003: Get All Shops</div>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Click the button below to fetch all registered shop details from the system database using your JWT Token.</p>
+                <button type="submit" class="btn" style="margin-top: 20px;">Fetch Shop List</button>
+            </form>
+
+        </div>
+
+        <!-- Response Console Column -->
+        <div class="card">
+            <div class="card-header">
+                <span>API Response Output</span>
+                <div>
+                    <span id="statusBadge" class="status-badge"></span>
+                    <button class="btn-copy" onclick="copyResponse()">Copy JSON</button>
+                </div>
+            </div>
+            <pre id="responseOutput" class="response-box">// Waiting for request...</pre>
+        </div>
+    </div>
+
+    <script>
+        // Store Base64 Image Strings
+        let imageBase64Data = {
+            add: "",
+            update: ""
+        };
+
+        // Initialize localStorage state
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedToken = localStorage.getItem('shop_api_token');
+            const savedUrl = localStorage.getItem('shop_api_url');
+            if (savedToken) document.getElementById('bearerToken').value = savedToken;
+            if (savedUrl) document.getElementById('apiUrl').value = savedUrl;
+
+            document.getElementById('bearerToken').addEventListener('input', (e) => {
+                localStorage.setItem('shop_api_token', e.target.value.trim());
+            });
+
+            document.getElementById('apiUrl').addEventListener('input', (e) => {
+                localStorage.setItem('shop_api_url', e.target.value.trim());
+            });
+        });
+
+        // Tab Switcher
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.currentTarget.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // Image to Base64 Converter
+        function handleImageUpload(event, type) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                imageBase64Data[type] = e.target.result;
+                
+                const previewImg = document.getElementById(`${type}_preview`);
+                const fileLabel = document.getElementById(`${type}_file_label`);
+
+                previewImg.src = e.target.result;
+                previewImg.style.display = 'block';
+                fileLabel.textContent = file.name;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Send API Request Handler
+        async function handleRequest(event, actionCode) {
+            event.preventDefault();
+
+            const url = document.getElementById('apiUrl').value.trim();
+            const token = document.getElementById('bearerToken').value.trim();
+            const responseOutput = document.getElementById('responseOutput');
+            const statusBadge = document.getElementById('statusBadge');
+            const connectionStatus = document.getElementById('connectionStatus');
+
+            if (!url) {
+                alert("Please provide a valid API Endpoint URL!");
+                return;
+            }
+
+            let payload = { action: actionCode };
+
+            // Construct Payloads based on Action Code
+            if (actionCode === '1000') {
+                payload.shop_name = document.getElementById('add_shop_name').value.trim();
+                payload.owner_name = document.getElementById('add_owner_name').value.trim();
+                payload.phone_no = document.getElementById('add_phone_no').value.trim();
+                payload.address = document.getElementById('add_address').value.trim();
+                if (imageBase64Data.add) payload.image_base64 = imageBase64Data.add;
+
+            } else if (actionCode === '1001') {
+                payload.uuid = document.getElementById('update_uuid').value.trim();
+                const shopName = document.getElementById('update_shop_name').value.trim();
+                const ownerName = document.getElementById('update_owner_name').value.trim();
+                const phoneNo = document.getElementById('update_phone_no').value.trim();
+                const address = document.getElementById('update_address').value.trim();
+
+                if (shopName) payload.shop_name = shopName;
+                if (ownerName) payload.owner_name = ownerName;
+                if (phoneNo) payload.phone_no = phoneNo;
+                if (address) payload.address = address;
+                if (imageBase64Data.update) payload.image_base64 = imageBase64Data.update;
+
+            } else if (actionCode === '1002') {
+                payload.uuid = document.getElementById('delete_uuid').value.trim();
+            } else if (actionCode === '1003') {
+                // Action 1003 (Get Shop List) requires only action code & token
+            }
+
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            responseOutput.textContent = "// Sending request...";
+            connectionStatus.textContent = "Processing...";
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload)
+                });
+
+                const httpStatus = response.status;
+                const responseData = await response.json();
+
+                // Format JSON output
+                responseOutput.textContent = JSON.stringify(responseData, null, 2);
+
+                // Update Status UI
+                statusBadge.textContent = `HTTP ${httpStatus}`;
+                statusBadge.className = `status-badge ${response.ok ? 'success' : 'error'}`;
+                connectionStatus.textContent = response.ok ? "Last Request Succeeded" : "Last Request Failed";
+
+            } catch (error) {
+                responseOutput.textContent = `Error sending request:\n${error.message}`;
+                statusBadge.textContent = "Error";
+                statusBadge.className = "status-badge error";
+                connectionStatus.textContent = "Request Failed";
+            }
+        }
+
+        // Copy Response JSON
+        function copyResponse() {
+            const text = document.getElementById('responseOutput').textContent;
+            if (!text || text.startsWith("//")) return;
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+
+            alert("Response JSON copied to clipboard!");
+        }
+    </script>
+</body>
+</html>

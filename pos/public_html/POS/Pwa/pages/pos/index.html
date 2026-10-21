@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="my" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex POS - PWA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col md:flex-row">
+    
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-screen overflow-hidden p-6">
+        <h1 class="text-2xl font-bold mb-4">POS Checkout</h1>
+        <div id="pos-categories" class="flex space-x-2 mb-4"></div>
+        <div id="pos-product-grid" class="grid grid-cols-2 gap-4"></div>
+        <div id="cart-items-container" class="mt-4"></div>
+    </main>
+
+    <!-- Main Module Entry Point -->
+    <script type="module" src="../../assets/js/app.js"></script>
+</body>
+</html>
