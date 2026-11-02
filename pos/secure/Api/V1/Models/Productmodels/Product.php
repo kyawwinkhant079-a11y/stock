@@ -14,148 +14,140 @@ class Product
         $this->conn = $conn;
     }
 
-    public function getStockTransactions()
+    public function getStockMovements($branchId = null)
     {
-        $query = "SELECT 
-                    id,
-                    product_uuid,
-                    product_name,
-                    category_name,
-                    type,
-                    quantity,
-                    created_username,
-                    created_at
-                FROM stock_transactions 
-                ORDER BY id DESC";
-
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
+        if ($branchId) {
+            $query = "SELECT sm.*, p.name as product_name, b.name as branch_name, u.name as user_name
+                      FROM stock_movements sm
+                      LEFT JOIN products p ON sm.product_id = p.id
+                      LEFT JOIN branches b ON sm.branch_id = b.id
+                      LEFT JOIN users u ON sm.user_id = u.id
+                      WHERE sm.branch_id = :branch_id
+                      ORDER BY sm.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':branch_id' => $branchId]);
+        } else {
+            $query = "SELECT sm.*, p.name as product_name, b.name as branch_name, u.name as user_name
+                      FROM stock_movements sm
+                      LEFT JOIN products p ON sm.product_id = p.id
+                      LEFT JOIN branches b ON sm.branch_id = b.id
+                      LEFT JOIN users u ON sm.user_id = u.id
+                      ORDER BY sm.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+        }
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function deleteProductByUuid($uuid)
+    public function deleteProductById($id)
     {
-        $query = "DELETE FROM products WHERE uuid = ?";
+        $query = "DELETE FROM products WHERE id = ?";
         $stmt = $this->conn->prepare($query);
-        return $stmt->execute([$uuid]);
+        return $stmt->execute([$id]);
     }
 
-    public function updateProductStock($uuid, $newStock)
+    public function updateBranchStock($branchId, $productId, $newStock)
     {
-        $query = "UPDATE products SET 
-                    stock_quantity = :stock_quantity,
-                    updated_at     = NOW()
-                WHERE uuid = :uuid";
-
+        // branch_stocks တွင် ရှိပြီးသားလား စစ်ဆေးပြီး ရှိလျှင် update, မရှိလျှင် insert
+        $query = "INSERT INTO branch_stocks (id, branch_id, product_id, stock_qty, updated_at) 
+                  VALUES (:id, :branch_id, :product_id, :stock_qty, NOW())
+                  ON DUPLICATE KEY UPDATE stock_qty = :stock_qty, updated_at = NOW()";
+        
         $stmt = $this->conn->prepare($query);
+        $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
 
         return $stmt->execute([
-            ':stock_quantity' => $newStock,
-            ':uuid'           => $uuid
+            ':id'         => $id,
+            ':branch_id'  => $branchId,
+            ':product_id' => $productId,
+            ':stock_qty'  => $newStock
         ]);
     }
 
-    public function logStockTransaction($productUuid, $productName, $categoryName, $type, $quantity, $username)
+    public function logStockMovement($movementId, $branchId, $productId, $userId, $type, $quantity, $note)
     {
-        $query = "INSERT INTO stock_transactions (
-                    product_uuid, 
-                    product_name, 
-                    category_name, 
-                    type, 
-                    quantity, 
-                    created_username, 
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NOW())";
+        $query = "INSERT INTO stock_movements (
+                    id, branch_id, product_id, user_id, type, quantity, note, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
 
         $stmt = $this->conn->prepare($query);
 
         return $stmt->execute([
-            $productUuid,
-            $productName,
-            $categoryName,
-            strtolower($type), 
+            $movementId,
+            $branchId,
+            $productId,
+            $userId,
+            strtoupper($type), 
             $quantity,
-            $username
+            $note
         ]);
     }
 
     public function updateProduct($data)
     {
-        if (!empty($data['image_path'])) {
-            $query = "UPDATE products SET 
-                        category_name  = :category_name,
-                        name           = :name,
-                        barcode        = :barcode,
-                        cost_price     = :cost_price,
-                        sell_price     = :sell_price,
-                        stock_quantity = :stock_quantity,
-                        brand          = :brand,
-                        model          = :model,
-                        description    = :description,
-                        image_path     = :image_path,
-                        updated_at     = NOW()
-                      WHERE uuid = :uuid";
-        } else {
-            $query = "UPDATE products SET 
-                        category_name  = :category_name,
-                        name           = :name,
-                        barcode        = :barcode,
-                        cost_price     = :cost_price,
-                        sell_price     = :sell_price,
-                        stock_quantity = :stock_quantity,
-                        brand          = :brand,
-                        model          = :model,
-                        description    = :description,
-                        updated_at     = NOW()
-                      WHERE uuid = :uuid";
-        }
+        $query = "UPDATE products SET 
+                    category_id  = :category_id,
+                    name         = :name,
+                    barcode      = :barcode,
+                    cost_price   = :cost_price,
+                    sale_price   = :sale_price,
+                    updated_at   = NOW()
+                  WHERE id = :id";
 
         $stmt = $this->conn->prepare($query);
 
-        $params = [
-            ':category_name'  => $data['category_name'],
-            ':name'           => $data['product_name'],
-            ':barcode'        => $data['barcode'],
-            ':cost_price'     => $data['cost_price'],
-            ':sell_price'     => $data['unit_price'],
-            ':stock_quantity' => $data['stock_quantity'],
-            ':brand'          => $data['brand'],
-            ':model'          => $data['model'],
-            ':description'    => $data['description'],
-            ':uuid'           => $data['uuid']
-        ];
-
-        if (!empty($data['image_path'])) {
-            $params[':image_path'] = $data['image_path'];
-        }
-
-        return $stmt->execute($params);
+        return $stmt->execute([
+            ':category_id' => $data['category_id'],
+            ':name'        => $data['product_name'],
+            ':barcode'     => $data['barcode'],
+            ':cost_price'  => $data['cost_price'],
+            ':sale_price'  => $data['unit_price'],
+            ':id'          => $data['id']
+        ]);
     }
 
-    public function getProductByUuid($uuid)
+    public function getProductById($id, $branchId = null)
     {
-        $query = "SELECT 
-                    id,
-                    uuid,
-                    category_name,
-                    name AS product_name, 
-                    barcode,
-                    cost_price,
-                    sell_price AS unit_price,
-                    stock_quantity,
-                    brand,
-                    model,
-                    description,
-                    image_path,
-                    created_user_name,
-                    updated_at
-                  FROM products 
-                  WHERE uuid = ? 
-                  LIMIT 1";
-
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$uuid]);
+        if ($branchId) {
+            $query = "SELECT 
+                        p.id,
+                        p.category_id,
+                        c.name AS category_name,
+                        p.name AS product_name, 
+                        p.barcode,
+                        p.cost_price,
+                        p.sale_price AS unit_price,
+                        COALESCE(bs.stock_qty, 0) AS stock_quantity,
+                        p.created_at
+                      FROM products p
+                      LEFT JOIN categories c ON p.category_id = c.id
+                      LEFT JOIN branch_stocks bs ON p.id = bs.product_id AND bs.branch_id = ?
+                      WHERE p.id = ? 
+                      LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$branchId, $id]);
+        } else {
+            $query = "SELECT 
+                        p.id,
+                        p.category_id,
+                        c.name AS category_name,
+                        p.name AS product_name, 
+                        p.barcode,
+                        p.cost_price,
+                        p.sale_price AS unit_price,
+                        p.created_at
+                      FROM products p
+                      LEFT JOIN categories c ON p.category_id = c.id
+                      WHERE p.id = ? 
+                      LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([$id]);
+        }
 
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
@@ -170,27 +162,42 @@ class Product
         return $stmt->rowCount() > 0;
     }
 
-    public function getAllProducts()
+    public function getAllProducts($branchId = null)
     {
-        $query = "SELECT 
-                    id,
-                    uuid,
-                    category_name,
-                    name AS product_name, 
-                    barcode,
-                    cost_price,
-                    sell_price AS unit_price,
-                    stock_quantity,
-                    brand,
-                    model,
-                    image_path,
-                    created_user_name,
-                    updated_at
-                  FROM products 
-                  ORDER BY id DESC";
-
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
+        if ($branchId) {
+            $query = "SELECT 
+                        p.id,
+                        p.category_id,
+                        c.name AS category_name,
+                        p.name AS product_name, 
+                        p.barcode,
+                        p.cost_price,
+                        p.sale_price AS unit_price,
+                        COALESCE(bs.stock_qty, 0) AS stock_quantity,
+                        p.created_at
+                      FROM products p
+                      LEFT JOIN categories c ON p.category_id = c.id
+                      LEFT JOIN branch_stocks bs ON p.id = bs.product_id AND bs.branch_id = :branch_id
+                      ORDER BY p.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':branch_id' => $branchId]);
+        } else {
+            $query = "SELECT 
+                        p.id,
+                        p.category_id,
+                        c.name AS category_name,
+                        p.name AS product_name, 
+                        p.barcode,
+                        p.cost_price,
+                        p.sale_price AS unit_price,
+                        0 AS stock_quantity,
+                        p.created_at
+                      FROM products p
+                      LEFT JOIN categories c ON p.category_id = c.id
+                      ORDER BY p.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+        }
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -198,25 +205,18 @@ class Product
     public function createProduct($data)
     {
         $query = "INSERT INTO products (
-                    uuid, category_name, name, barcode, 
-                    cost_price, sell_price, stock_quantity, 
-                    brand, model, description, image_path, created_user_name
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    id, category_id, name, barcode, 
+                    cost_price, sale_price, created_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, NOW())";
 
         $stmt = $this->conn->prepare($query);
         $success = $stmt->execute([
-            $data['uuid'],
-            $data['category_name'],
+            $data['id'],
+            $data['category_id'],
             $data['name'],
             $data['barcode'],
             $data['cost_price'],
-            $data['sell_price'],
-            $data['stock_quantity'],
-            $data['brand'],
-            $data['model'],
-            $data['description'],
-            $data['image_path'],
-            $data['created_user_name']
+            $data['sell_price']
         ]);
 
         if (!$success) {

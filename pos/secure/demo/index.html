@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusPOS - Enterprise Multi-Branch POS & Inventory</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#090d16',
+                        glassBg: 'rgba(15, 23, 42, 0.75)',
+                        glassBorder: 'rgba(255, 255, 255, 0.08)',
+                        accentCyan: '#06b6d4',
+                        accentGold: '#f59e0b',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts Inter & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS Styles -->
+    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/components.css">
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#090d16">
+</head>
+<body class="min-h-screen flex flex-col bg-darkBg text-slate-100 selection:bg-cyan-500 selection:text-white">
+
+    <!-- Offline Notification Banner -->
+    <div id="offline-banner" class="hidden bg-amber-500 text-slate-950 px-4 py-2 text-center text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 z-50 sticky top-0 shadow-lg">
+        <i class="fa-solid fa-wifi-slash"></i> Offline Mode: Working with local cache & IndexedDB sync.
+    </div>
+
+    <!-- AUTHENTICATION VIEW -->
+    <div id="auth-view" class="fixed inset-0 z-50 flex items-center justify-center bg-darkBg/95 backdrop-blur-xl p-4">
+        <div class="glass-panel w-full max-w-md p-8 rounded-3xl shadow-2xl border border-white/10 relative overflow-hidden">
+            <div class="absolute -top-24 -right-24 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 to-amber-500 text-slate-950 text-2xl font-black shadow-lg mb-4">
+                    <i class="fa-solid fa-cash-register"></i>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight text-white">NexusPOS Enterprise</h1>
+                <p class="text-xs text-slate-400 mt-1">Multi-Branch Inventory & POS System</p>
+            </div>
+
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Email Address</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-regular fa-envelope"></i></span>
+                        <input type="email" id="login-email" required value="admin@nexuspos.com" class="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-700 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition text-white">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Password</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-regular fa-lock"></i></span>
+                        <input type="password" id="login-password" required value="password123" class="w-full pl-10 pr-4 py-3 bg-slate-900/60 border border-slate-700 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition text-white">
+                    </div>
+                </div>
+                <button type="submit" class="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-400 hover:to-cyan-500 text-slate-950 font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition transform active:scale-95 text-sm mt-2">
+                    Secure Login
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP SHELL -->
+    <div id="app-wrapper" class="hidden flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="hidden md:flex flex-col w-64 glass-panel border-r border-slate-800 z-30">
+            <div class="p-6 flex items-center gap-3 border-b border-slate-800/60">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-amber-500 flex items-center justify-center text-slate-950 font-black shadow-md">
+                    <i class="fa-solid fa-cube"></i>
+                </div>
+                <div>
+                    <h2 class="font-bold text-sm tracking-wide text-white">NexusPOS</h2>
+                    <span id="sidebar-branch-name" class="text-[10px] text-cyan-400 font-semibold tracking-wider uppercase">Downtown Branch</span>
+                </div>
+            </div>
+
+            <nav class="flex-1 p-4 space-y-1 overflow-y-auto" id="sidebar-nav">
+                <!-- Navigation injected via app.js -->
+            </nav>
+
+            <div class="p-4 border-t border-slate-800/60">
+                <div class="glass-card p-3 rounded-2xl flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-xs" id="user-avatar-initial">AD</div>
+                        <div class="overflow-hidden">
+                            <p class="text-xs font-bold text-white truncate" id="user-display-name">Admin User</p>
+                            <p class="text-[10px] text-slate-400 capitalize" id="user-display-role">Super Admin</p>
+                        </div>
+                    </div>
+                    <button onclick="AuthModule.logout()" class="text-slate-400 hover:text-red-400 p-2 transition" title="Logout"><i class="fa-solid fa-power-off"></i></button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="flex-1 flex flex-col h-screen overflow-hidden bg-gradient-to-br from-darkBg via-slate-950 to-slate-900">
+            <header class="glass-panel h-16 border-b border-slate-800/80 px-6 flex items-center justify-between z-20">
+                <h2 id="current-page-title" class="text-lg font-bold text-white tracking-tight">POS Terminal</h2>
+                <div class="flex items-center gap-3">
+                    <select id="branch-selector" onchange="App.changeBranch(this.value)" class="bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-xl text-xs text-white focus:outline-none">
+                        <option value="b1">Downtown Branch</option>
+                        <option value="b2">City Mall Branch</option>
+                    </select>
+                    <button onclick="App.syncWithServer()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-medium text-slate-200 border border-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-rotate" id="sync-icon"></i> Sync
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dynamic Views Container -->
+            <div id="main-content-area" class="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
+                <!-- Modules load here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Navigation -->
+    <nav class="md:hidden fixed bottom-0 inset-x-0 glass-panel border-t border-slate-800 flex justify-around p-3 z-40" id="mobile-nav">
+        <!-- Mobile nav links injected via app.js -->
+    </nav>
+
+    <!-- Global Modal Overlay -->
+    <div id="modal-container" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-darkBg/80 backdrop-blur-sm p-4"></div>
+
+    <!-- Modular Scripts Loading -->
+    <script src="./js/api.js"></script>
+    <script src="./js/store.js"></script>
+    <script src="./js/modules/auth.js"></script>
+    <script src="./js/modules/pos.js"></script>
+    <script src="./js/modules/products.js"></script>
+    <script src="./js/modules/categories.js"></script>
+    <script src="./js/modules/inventory.js"></script>
+    <script src="./js/modules/sales.js"></script>
+    <script src="./js/modules/suppliers.js"></script>
+    <script src="./js/modules/reports.js"></script>
+    <script src="./js/modules/users.js"></script>
+    <script src="./js/modules/shops.js"></script>
+    <script src="./js/app.js"></script>
+</body>
+</html>

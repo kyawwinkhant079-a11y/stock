@@ -16,13 +16,16 @@ class User
         $this->conn = $conn;
     }
 
-    public function getAllUsers($currentUserToken = null)
+    public function getAllUsers($branchId = null, $currentUserId = null)
     {
-        if ($currentUserToken) {
-            $stmt = $this->conn->prepare("SELECT id, usertoken, username, email, phone, role, image_path, status, created_at FROM users WHERE usertoken != ? ORDER BY id DESC");
-            $stmt->execute([$currentUserToken]);
+        if ($branchId) {
+            $stmt = $this->conn->prepare("SELECT id, branch_id, name, email, role, created_at FROM users WHERE branch_id = ? AND id != ? ORDER BY created_at DESC");
+            $stmt->execute([$branchId, $currentUserId]);
+        } else if ($currentUserId) {
+            $stmt = $this->conn->prepare("SELECT id, branch_id, name, email, role, created_at FROM users WHERE id != ? ORDER BY created_at DESC");
+            $stmt->execute([$currentUserId]);
         } else {
-            $stmt = $this->conn->prepare("SELECT id, usertoken, username, email, phone, role, image_path, status, created_at FROM users ORDER BY id DESC");
+            $stmt = $this->conn->prepare("SELECT id, branch_id, name, email, role, created_at FROM users ORDER BY created_at DESC");
             $stmt->execute();
         }
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -35,7 +38,7 @@ class User
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function updateUserInfo($userId, $role)
+    public function updateUserRole($userId, $role)
     {
         $stmt = $this->conn->prepare("UPDATE users SET role = ? WHERE id = ?");
         return $stmt->execute([$role, $userId]);
@@ -47,36 +50,17 @@ class User
         return $stmt->execute([$userId]);
     }
 
-    public function updateProfile($usertoken, $username, $phone, $imagePath = null)
+    public function getSuperAdminCount()
     {
-        if ($imagePath !== null) {
-            $query = "UPDATE users SET username = ?, phone = ?, image_path = ? WHERE usertoken = ?";
-            $stmt = $this->conn->prepare($query);
-            $success = $stmt->execute([$username, $phone, $imagePath, $usertoken]);
-        } else {
-            $query = "UPDATE users SET username = ?, phone = ? WHERE usertoken = ?";
-            $stmt = $this->conn->prepare($query);
-            $success = $stmt->execute([$username, $phone, $usertoken]);
-        }
-
-        if (!$success) {
-            throw new Exception("Failed to update user profile record.");
-        }
-
-        return true;
-    }
-
-    public function getUserByToken($usertoken)
-    {
-        $stmt = $this->conn->prepare("SELECT id, usertoken, username, email, image_path, phone, role, status, created_at FROM users WHERE usertoken = ?");
-        $stmt->execute([$usertoken]);
-
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = $this->conn->prepare("SELECT COUNT(*) as count FROM users WHERE role = 'super_admin'");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return (int)($row['count'] ?? 0);
     }
 
     public function logincheck()
     {
-        $stmt = $this->conn->prepare("SELECT id, usertoken, username, email, password, role, status FROM users WHERE email = ?");
+        $stmt = $this->conn->prepare("SELECT id, branch_id, name, email, password, role FROM users WHERE email = ?");
         $stmt->execute([$this->userdata->email]);
 
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -105,19 +89,18 @@ class User
         return ((int) $row['total']) > 0;
     }
 
-    public function registeruser($token, $role = 'user', $status = 'pending') 
+    public function registeruser($userId, $branchId = null, $role = 'cashier') 
     {
         $hashedPassword = password_hash($this->userdata->password, PASSWORD_BCRYPT);
 
-        $stmt = $this->conn->prepare("INSERT INTO users (usertoken, username, email, phone, password, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt = $this->conn->prepare("INSERT INTO users (id, branch_id, name, email, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
         $success = $stmt->execute([
-            $token, 
-            $this->userdata->username, 
+            $userId, 
+            $branchId,
+            $this->userdata->name, 
             $this->userdata->email, 
-            $this->userdata->phone, 
             $hashedPassword,
-            $role,
-            $status
+            $role
         ]);
 
         if (!$success) {
@@ -125,11 +108,5 @@ class User
         }
 
         return true;
-    }
-
-    public function updateUserRoleAndStatus($targetUserToken, $role, $status)
-    {
-        $stmt = $this->conn->prepare("UPDATE users SET role = ?, status = ? WHERE usertoken = ?");
-        return $stmt->execute([$role, $status, $targetUserToken]);
     }
 }

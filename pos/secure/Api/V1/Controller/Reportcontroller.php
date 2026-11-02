@@ -37,8 +37,10 @@ class Reportcontroller
     public function getDashboardSummary()
     {
         $token = $this->input->validate("getDashboardSummary");
-        self::$auth->decode($token);
+        $decodedToken = self::$auth->decode($token);
 
+        // Branch ID ကို Request သို့မဟုတ် JWT Token ထဲမှ ရယူခြင်း (Multi-branch support)
+        $branchId  = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
         $filter    = self::$userdata->filter ?? 'today';
         $startDate = self::$userdata->start_date ?? null;
         $endDate   = self::$userdata->end_date ?? null;
@@ -48,7 +50,7 @@ class Reportcontroller
         }
 
         try {
-            $summaryData = $this->report->getSalesSummary($filter, $startDate, $endDate);
+            $summaryData = $this->report->getSalesSummary($branchId, $filter, $startDate, $endDate);
 
             Response::sendbody([
                 "status"  => 200,

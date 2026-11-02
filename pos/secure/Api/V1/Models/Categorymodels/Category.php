@@ -16,32 +16,51 @@ class Category
         $this->conn = $conn;
     }
 
-    public function deleteCategoryByUuid($uuid)
+    public function createCategory($id, $branchId, $name)
     {
-        $query = "DELETE FROM categories WHERE uuid = ?";
-        $stmt = $this->conn->prepare($query); 
-        return $stmt->execute([$uuid]);
-    }
-
-    public function getCategoryByUuid($uuid)
-    {
-        $stmt = $this->conn->prepare("SELECT * FROM categories WHERE uuid = ?");
-        $stmt->execute([$uuid]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    public function getAllCategories()
-    {
-        $query = "SELECT uuid, name, image_path, updated_at FROM categories ORDER BY id DESC";
+        $query = "INSERT INTO categories (id, branch_id, name, created_at) VALUES (:id, :branch_id, :name, NOW())";
         $stmt = $this->conn->prepare($query);
-        $stmt->execute();
+        $success = $stmt->execute([
+            ':id'       => $id,
+            ':branch_id'=> $branchId,
+            ':name'     => $name
+        ]);
+
+        if (!$success) {
+            throw new Exception("Failed to insert category record.");
+        }
+
+        return true;
+    }
+
+    public function getAllCategories($branchId = null)
+    {
+        if ($branchId) {
+            $query = "SELECT * FROM categories WHERE branch_id = :branch_id ORDER BY created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':branch_id' => $branchId]);
+        } else {
+            $query = "SELECT * FROM categories ORDER BY created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+        }
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function updateCategory($uuid, $name, $imagePath)
+    public function getCategoryById($id)
     {
-        $stmt = $this->conn->prepare("UPDATE categories SET name = ?, image_path = ?, updated_at = NOW() WHERE uuid = ?");
-        $success = $stmt->execute([$name, $imagePath, $uuid]);
+        $stmt = $this->conn->prepare("SELECT * FROM categories WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateCategory($id, $name)
+    {
+        $stmt = $this->conn->prepare("UPDATE categories SET name = :name WHERE id = :id");
+        $success = $stmt->execute([
+            ':name' => $name,
+            ':id'   => $id
+        ]);
 
         if (!$success) {
             throw new Exception("Failed to update category record.");
@@ -50,22 +69,22 @@ class Category
         return true;
     }
 
-    public function isCategoryExists($name)
+    public function deleteCategoryById($id)
     {
-        $stmt = $this->conn->prepare("SELECT id FROM categories WHERE name = ?");
-        $stmt->execute([$name]);
-        return $stmt->rowCount() > 0;
+        $query = "DELETE FROM categories WHERE id = :id";
+        $stmt = $this->conn->prepare($query); 
+        return $stmt->execute([':id' => $id]);
     }
 
-    public function createCategory($uuid, $name, $imagePath = null)
+    public function isCategoryExists($name, $branchId = null)
     {
-        $stmt = $this->conn->prepare("INSERT INTO categories (uuid, name, image_path) VALUES (?, ?, ?)");
-        $success = $stmt->execute([$uuid, $name, $imagePath]);
-
-        if (!$success) {
-            throw new Exception("Failed to insert category record.");
+        if ($branchId) {
+            $stmt = $this->conn->prepare("SELECT id FROM categories WHERE name = :name AND branch_id = :branch_id");
+            $stmt->execute([':name' => $name, ':branch_id' => $branchId]);
+        } else {
+            $stmt = $this->conn->prepare("SELECT id FROM categories WHERE name = :name");
+            $stmt->execute([':name' => $name]);
         }
-
-        return true;
+        return $stmt->rowCount() > 0;
     }
 }

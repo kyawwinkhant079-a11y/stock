@@ -58,16 +58,17 @@ class Suppliercontroller
         $token = $this->input->validate("addSupplier");
 
         $decodedData = self::$auth->decode($token);
-        $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedData->branch_id ?? null;
 
         $supplierModel = new Supplier(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
         
-        $supplierName    = self::$userdata->name ?? '';
-        $supplierPhone   = self::$userdata->phone ?? '';
-        $supplierEmail   = self::$userdata->email ?? '';
-        $supplierFact    = self::$userdata->fact   ?? '';
-        $supplierAddress = self::$userdata->address ?? '';
+        $supplierName        = self::$userdata->name ?? '';
+        $supplierContactPers = self::$userdata->contact_person ?? '';
+        $supplierPhone       = self::$userdata->phone ?? '';
+        $supplierEmail       = self::$userdata->email ?? '';
+        $supplierAddress     = self::$userdata->address ?? '';
 
         if (empty($supplierName)) {
             Response::sendbody([
@@ -85,28 +86,24 @@ class Suppliercontroller
             return;
         }
 
-        $supplierUuid = bin2hex(random_bytes(16));
+        // CHAR(36) UUID generation
+        $supplierId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
 
         self::$conn->beginTransaction();
 
         try {
-            $supplierModel->createSupplier($supplierUuid, $supplierName, $supplierPhone, $supplierEmail, $supplierFact, $supplierAddress);
+            $supplierModel->createSupplier($supplierId, $supplierName, $supplierContactPers, $supplierPhone, $supplierEmail, $supplierAddress);
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "ADD_SUPPLIER",
-                "supplier",
-                $supplierUuid,
                 "Created supplier: {$supplierName}",
-                null,
-                [
-                    "uuid"    => $supplierUuid, 
-                    "name"    => $supplierName, 
-                    "phone"   => $supplierPhone, 
-                    "email"   => $supplierEmail, 
-                    "fact"    => $supplierFact,
-                    "address" => $supplierAddress
-                ],
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
@@ -115,12 +112,12 @@ class Suppliercontroller
                 "status" => 200,
                 "message" => "Supplier added successfully!",
                 "data" => [
-                    "uuid"    => $supplierUuid,
-                    "name"    => $supplierName,
-                    "phone"   => $supplierPhone,
-                    "email"   => $supplierEmail,
-                    "fact"    => $supplierFact,
-                    "address" => $supplierAddress
+                    "id"             => $supplierId,
+                    "name"           => $supplierName,
+                    "contact_person" => $supplierContactPers,
+                    "phone"          => $supplierPhone,
+                    "email"          => $supplierEmail,
+                    "address"        => $supplierAddress
                 ]
             ]);
 
@@ -138,22 +135,23 @@ class Suppliercontroller
     {
         $token = $this->input->validate("updateSupplier");
         $decodedData = self::$auth->decode($token);
-        $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedData->branch_id ?? null;
 
         $supplierModel = new Supplier(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $uuid            = self::$userdata->uuid ?? '';
-        $supplierName    = self::$userdata->name ?? '';
-        $supplierPhone   = self::$userdata->phone ?? '';
-        $supplierEmail   = self::$userdata->email ?? '';
-        $supplierFact    = self::$userdata->fact   ?? '';
-        $supplierAddress = self::$userdata->address ?? '';
+        $supplierId          = self::$userdata->id ?? self::$userdata->uuid ?? '';
+        $supplierName        = self::$userdata->name ?? '';
+        $supplierContactPers = self::$userdata->contact_person ?? '';
+        $supplierPhone       = self::$userdata->phone ?? '';
+        $supplierEmail       = self::$userdata->email ?? '';
+        $supplierAddress     = self::$userdata->address ?? '';
 
-        if (empty($uuid)) {
+        if (empty($supplierId)) {
             Response::sendbody([
                 "status" => 400,
-                "message" => "Supplier UUID is required for update"
+                "message" => "Supplier ID is required for update"
             ]);
             return;
         }
@@ -177,23 +175,14 @@ class Suppliercontroller
         self::$conn->beginTransaction();
 
         try {
-            $supplierModel->updateSupplier($uuid, $supplierName, $supplierPhone, $supplierEmail, $supplierFact, $supplierAddress);
+            $supplierModel->updateSupplier($supplierId, $supplierName, $supplierContactPers, $supplierPhone, $supplierEmail, $supplierAddress);
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "UPDATE_SUPPLIER",
-                "supplier",
-                $uuid,
                 "Updated supplier: {$supplierName}",
-                null,
-                [
-                    "uuid"    => $uuid, 
-                    "name"    => $supplierName, 
-                    "phone"   => $supplierPhone, 
-                    "email"   => $supplierEmail, 
-                    "fact"    => $supplierFact,
-                    "address" => $supplierAddress
-                ],
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
@@ -202,12 +191,12 @@ class Suppliercontroller
                 "status" => 200,
                 "message" => "Supplier updated successfully!",
                 "data" => [
-                    "uuid"    => $uuid,
-                    "name"    => $supplierName,
-                    "phone"   => $supplierPhone,
-                    "email"   => $supplierEmail,
-                    "fact"    => $supplierFact,
-                    "address" => $supplierAddress
+                    "id"             => $supplierId,
+                    "name"           => $supplierName,
+                    "contact_person" => $supplierContactPers,
+                    "phone"          => $supplierPhone,
+                    "email"          => $supplierEmail,
+                    "address"        => $supplierAddress
                 ]
             ]);
 
@@ -225,17 +214,18 @@ class Suppliercontroller
     {
         $token = $this->input->validate("deleteSupplier");
         $decodedData = self::$auth->decode($token);
-        $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedData->branch_id ?? null;
 
         $supplierModel = new Supplier(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $uuid = self::$userdata->uuid ?? (self::$userdata->id ?? '');
+        $supplierId = self::$userdata->id ?? self::$userdata->uuid ?? '';
 
-        if (empty($uuid)) {
+        if (empty($supplierId)) {
             Response::sendbody([
                 "status" => 400,
-                "message" => "Supplier identifier (uuid/id) is required"
+                "message" => "Supplier identifier (id) is required"
             ]);
             return;
         }
@@ -243,16 +233,14 @@ class Suppliercontroller
         self::$conn->beginTransaction();
 
         try {
-            $supplierModel->deleteSupplier($uuid);
+            $supplierModel->deleteSupplier($supplierId);
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "DELETE_SUPPLIER",
-                "supplier",
-                $uuid,
-                "Deleted supplier with ID/UUID: {$uuid}",
-                null,
-                ["uuid" => $uuid],
-                $username
+                "Deleted supplier with ID: {$supplierId}",
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();

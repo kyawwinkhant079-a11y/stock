@@ -1,0 +1,5 @@
+.active-nav {
+background: rgba(30, 41, 59, 0.85);
+color: #06b6d4 !important;
+border-right: 2px solid #06b6d4;
+}

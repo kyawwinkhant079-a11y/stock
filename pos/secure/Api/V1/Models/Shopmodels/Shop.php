@@ -16,70 +16,68 @@ class Shop
         $this->conn = $conn;
     }
 
-    public function createShop($shopUuid, $shopName, $ownerName, $phoneNo, $address, $dbImagePath)
+    // 1. Branches ဇယားထဲသို့ အသစ်ထည့်ခြင်း
+    public function createBranch($id, $name, $address, $phone)
     {
-        $query = "INSERT INTO shops (uuid, shop_name, owner_name, phone_no, address, image_path, created_at) 
-                  VALUES (:uuid, :shop_name, :owner_name, :phone_no, :address, :image_path, NOW())";
+        $query = "INSERT INTO branches (id, name, address, phone, created_at) 
+                  VALUES (:id, :name, :address, :phone, NOW())";
         
         $stmt = $this->conn->prepare($query);
         
         return $stmt->execute([
-            ':uuid'       => $shopUuid,
-            ':shop_name'  => $shopName,
-            ':owner_name' => $ownerName,
-            ':phone_no'   => $phoneNo,
-            ':address'    => $address,
-            ':image_path' => $dbImagePath
+            ':id'      => $id,
+            ':name'    => $name,
+            ':address' => $address,
+            ':phone'   => $phone
         ]);
     }
 
-    public function getAllShops()
+    // 2. ဆိုင်ခွဲအားလုံးကို ဆွဲထုတ်ရန်
+    public function getAllBranches()
     {
-        $query = "SELECT * FROM shops ORDER BY id DESC";
+        $query = "SELECT * FROM branches ORDER BY created_at DESC";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function getShopByUuid($uuid)
+    // 3. ID ဖြင့် ဆိုင်ခွဲရှာရန်
+    public function getBranchById($id)
     {
-        $query = "SELECT * FROM shops WHERE uuid = :uuid LIMIT 1";
+        $query = "SELECT * FROM branches WHERE id = :id LIMIT 1";
         $stmt = $this->conn->prepare($query);
-        $stmt->execute([':uuid' => $uuid]);
+        $stmt->execute([':id' => $id]);
         
-        $shop = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $shop ? $shop : false;
+        $branch = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $branch ? $branch : false;
     }
 
-    public function updateShop($shopUuid, $shopName, $ownerName, $phoneNo, $address, $dbImagePath)
+    // 4. ဆိုင်ခွဲအချက်အလက် ပြင်ဆင်ရန်
+    public function updateBranch($id, $name, $address, $phone)
     {
-        $query = "UPDATE shops 
-                  SET shop_name = :shop_name, 
-                      owner_name = :owner_name, 
-                      phone_no = :phone_no, 
+        $query = "UPDATE branches 
+                  SET name = :name, 
                       address = :address, 
-                      image_path = :image_path, 
-                      updated_at = NOW() 
-                  WHERE uuid = :uuid";
+                      phone = :phone 
+                  WHERE id = :id";
         
         $stmt = $this->conn->prepare($query);
         
         return $stmt->execute([
-            ':uuid'       => $shopUuid,
-            ':shop_name'  => $shopName,
-            ':owner_name' => $ownerName,
-            ':phone_no'   => $phoneNo,
-            ':address'    => $address,
-            ':image_path' => $dbImagePath
+            ':id'      => $id,
+            ':name'    => $name,
+            ':address' => $address,
+            ':phone'   => $phone
         ]);
     }
 
-    public function deleteShopByUuid($uuid)
+    // 5. ဆိုင်ခွဲဖျက်ရန်
+    public function deleteBranchById($id)
     {
-        $query = "DELETE FROM shops WHERE uuid = :uuid";
+        $query = "DELETE FROM branches WHERE id = :id";
         $stmt = $this->conn->prepare($query);
         
-        return $stmt->execute([':uuid' => $uuid]);
+        return $stmt->execute([':id' => $id]);
     }
 }

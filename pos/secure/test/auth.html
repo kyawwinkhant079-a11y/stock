@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Test (Login & Register)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl">
+        
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-500 bg-clip-text text-transparent">
+                <i class="fa-solid fa-shield-halved mr-2"></i> Auth Portal
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">Test Register (1101) & Login (1102)</p>
+        </div>
+
+        <!-- Tabs Switcher -->
+        <div class="flex bg-slate-950 p-1 rounded-xl border border-slate-800 mb-6">
+            <button onclick="switchTab('login')" id="loginTabBtn" 
+                class="flex-1 py-2 text-xs font-medium rounded-lg transition text-cyan-400 bg-slate-900 shadow">
+                Login (1102)
+            </button>
+            <button onclick="switchTab('register')" id="registerTabBtn" 
+                class="flex-1 py-2 text-xs font-medium rounded-lg transition text-slate-400 hover:text-slate-200">
+                Register (1101)
+            </button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm" class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
+                <input type="email" id="loginEmail" required placeholder="name@example.com"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Password</label>
+                <input type="password" id="loginPassword" required placeholder="••••••••"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <button type="submit" 
+                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium py-2.5 rounded-xl text-sm transition shadow-lg shadow-cyan-900/20 cursor-pointer">
+                Login Now
+            </button>
+        </form>
+
+        <!-- Register Form (Hidden by default) -->
+        <form id="registerForm" class="space-y-4" style="display: none;">
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Name (Username)</label>
+                <input type="text" id="regName" required placeholder="John Doe"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
+                <input type="email" id="regEmail" required placeholder="name@example.com"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Phone Number</label>
+                <input type="text" id="regPhone" required placeholder="09912345678"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Password (Min 6 chars)</label>
+                <input type="password" id="regPassword" required placeholder="••••••••"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <button type="submit" 
+                class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-xl text-sm transition shadow-lg shadow-indigo-900/20 cursor-pointer">
+                Register Account
+            </button>
+        </form>
+
+        <!-- Result / Token Display Box -->
+        <div id="resultContainer" class="mt-6 pt-6 border-t border-slate-800" style="display: none;">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-circle-check"></i> Response & JWT Token
+                </span>
+                <button onclick="copyToken()" class="text-[10px] text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded cursor-pointer">Copy Token</button>
+            </div>
+            <div id="tokenOutput" class="bg-slate-950 p-3 rounded-xl text-[11px] font-mono text-cyan-300 break-all max-h-32 overflow-y-auto border border-slate-900"></div>
+        </div>
+
+        <!-- Response Message Status -->
+        <div id="statusMessage" class="mt-4 text-xs text-center text-slate-400"></div>
+
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        const API_URL = '../index.php';
+
+        function switchTab(tab) {
+            const loginForm = document.getElementById("loginForm");
+            const regForm = document.getElementById("registerForm");
+            const loginBtn = document.getElementById("loginTabBtn");
+            const regBtn = document.getElementById("registerTabBtn");
+
+            if (tab === 'login') {
+                loginForm.style.display = "block";
+                regForm.style.display = "none";
+                loginBtn.className = "flex-1 py-2 text-xs font-medium rounded-lg transition text-cyan-400 bg-slate-900 shadow";
+                regBtn.className = "flex-1 py-2 text-xs font-medium rounded-lg transition text-slate-400 hover:text-slate-200";
+            } else {
+                loginForm.style.display = "none";
+                regForm.style.display = "block";
+                regBtn.className = "flex-1 py-2 text-xs font-medium rounded-lg transition text-indigo-400 bg-slate-900 shadow";
+                loginBtn.className = "flex-1 py-2 text-xs font-medium rounded-lg transition text-slate-400 hover:text-slate-200";
+            }
+            document.getElementById("statusMessage").textContent = "";
+        }
+
+        // Login Form Submission (Action 1102)
+        document.getElementById("loginForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const email = document.getElementById("loginEmail").value;
+            const password = document.getElementById("loginPassword").value;
+
+            await sendAuthRequest({
+                action: "1102",
+                email: email,
+                password: password
+            });
+        });
+
+        // Register Form Submission (Action 1101) - 'username' ကို Backend မျှော်လင့်ထားသည့်အတိုင်း 'username' နှင့် 'name' နှစ်ခုစလုံးပါဝင်အောင် ပို့ပေးမည်
+        document.getElementById("registerForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const name = document.getElementById("regName").value;
+            const email = document.getElementById("regEmail").value;
+            const phone = document.getElementById("regPhone").value;
+            const password = document.getElementById("regPassword").value;
+
+            await sendAuthRequest({
+                action: "1101",
+                username: name,   // Userinputlayer အတွက်
+                name: name,       // Database insert ($this->userdata->name) အတွက်
+                email: email,
+                phone: phone,
+                password: password
+            });
+        });
+
+        async function sendAuthRequest(payload) {
+            const statusEl = document.getElementById("statusMessage");
+            const resultContainer = document.getElementById("resultContainer");
+            const tokenOutput = document.getElementById("tokenOutput");
+
+            statusEl.textContent = "Processing request...";
+            statusEl.className = "mt-4 text-xs text-center text-amber-400";
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const jwtHeader = response.headers.get('X-TOKEN') || response.headers.get('Authorization');
+                const result = await response.json();
+
+                statusEl.textContent = result.message || "Done!";
+                statusEl.className = result.status === 200 ? "mt-4 text-xs text-center text-emerald-400" : "mt-4 text-xs text-center text-rose-400";
+
+                if (result.status === 200) {
+                    resultContainer.style.display = "block";
+                    
+                    let displayData = {
+                        response_body: result,
+                        jwt_from_header: jwtHeader || "Captured via Session/Header (Check Network Tab if empty)"
+                    };
+
+                    tokenOutput.textContent = JSON.stringify(displayData, null, 2);
+
+                    if (jwtHeader) {
+                        localStorage.setItem("jwt_token", jwtHeader);
+                    }
+                } else {
+                    resultContainer.style.display = "none";
+                }
+
+            } catch (error) {
+                statusEl.textContent = "Error: " + error.message;
+                statusEl.className = "mt-4 text-xs text-center text-rose-400";
+            }
+        }
+
+        function copyToken() {
+            const text = document.getElementById("tokenOutput").textContent;
+            navigator.clipboard.writeText(text);
+            alert("Token copied to clipboard!");
+        }
+    </script>
+</body>
+</html>

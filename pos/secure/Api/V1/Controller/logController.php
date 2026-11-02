@@ -31,13 +31,17 @@ class Logcontroller
     public function getLogs()
     {
         $token = $this->input->validate("getLogs");
-
         self::$auth->decode($token);
 
         $logModel = new Logs(self::$conn);
 
         try {
-            $logs = $logModel->getLogs();
+            // လိုအပ်ပါက Branch အလိုက် Filter လုပ်ရန် self::$userdata သို့မဟုတ် Request ထဲမှ branch_id ကို သုံးနိုင်သည်
+            $branchId = self::$userdata->branch_id ?? null;
+            $limit    = self::$userdata->limit ?? 100;
+            $offset   = self::$userdata->offset ?? 0;
+
+            $logs = $logModel->getLogs($branchId, $limit, $offset);
 
             Response::sendbody([
                 "status"  => 200,

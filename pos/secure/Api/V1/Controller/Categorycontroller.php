@@ -37,7 +37,8 @@ class Categorycontroller
         $categoryModel = new Category(self::$userdata, self::$conn);
 
         try {
-            $categories = $categoryModel->getAllCategories();
+            $branchId = self::$userdata->branch_id ?? null;
+            $categories = $categoryModel->getAllCategories($branchId);
 
             Response::sendbody([
                 "status"  => 200,
@@ -59,19 +60,29 @@ class Categorycontroller
 
         $decodedData = self::$auth->decode($token);
         $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
+        $branchId = self::$userdata->branch_id ?? null;
 
         $categoryModel = new Category(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        if ($categoryModel->isCategoryExists(self::$userdata->name)) {
+        if ($categoryModel->isCategoryExists(self::$userdata->name, $branchId)) {
             Response::sendbody([
                 "status" => 400,
-                "message" => "Category with this name already exists!"
+                "message" => "Category with this name already exists in this branch!"
             ]);
             return;
         }
 
-        $categoryUuid = bin2hex(random_bytes(16));
+        // CHAR(36) UUID generation
+        $categoryUuid = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+
         $categoryName = self::$userdata->name;
         $dbImagePath  = null;
 
@@ -127,16 +138,14 @@ class Categorycontroller
         self::$conn->beginTransaction();
 
         try {
-            $categoryModel->createCategory($categoryUuid, $categoryName, $dbImagePath);
+            $categoryModel->createCategory($categoryUuid, $branchId, $categoryName);
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "ADD_CATEGORY",
-                "category",
-                $categoryUuid,
                 "Created category: {$categoryName}",
-                null,
-                ["uuid" => $categoryUuid, "name" => $categoryName, "image_path" => $dbImagePath],
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
@@ -145,9 +154,8 @@ class Categorycontroller
                 "status" => 200,
                 "message" => "Category created successfully!",
                 "data" => [
-                    "uuid"       => $categoryUuid,
-                    "name"       => $categoryName,
-                    "image_path" => $dbImagePath
+                    "id"   => $categoryUuid,
+                    "name" => $categoryName
                 ]
             ]);
 
@@ -167,11 +175,14 @@ class Categorycontroller
 
         $decodedData = self::$auth->decode($token);
         $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
+        $branchId = self::$userdata->branch_id ?? null;
 
         $categoryModel = new Category(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $existingCategory = $categoryModel->getCategoryByUuid(self::$userdata->uuid);
+        $categoryId = self::$userdata->id ?? self::$userdata->uuid ?? '';
+        $existingCategory = $categoryModel->getCategoryById($categoryId);
 
         if (!$existingCategory) {
             Response::sendbody([
@@ -181,105 +192,34 @@ class Categorycontroller
             return;
         }
 
-        $categoryUuid = self::$userdata->uuid;
-        $categoryName = self::$userdata->name;
-        $dbImagePath  = $existingCategory['image_path'];
-        $isNewImageUploaded = false;
-        $oldFilePathToDelete = null;
-
-        $uploadDir = __DIR__ . '/../../../Storage/Category/';
-
-        if (!empty(self::$userdata->image_base64)) {
-            $base64Image = self::$userdata->image_base64;
-
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
-                $base64Image = substr($base64Image, strpos($base64Image, ',') + 1);
-                $extension = strtolower($type[1]);
-                
-                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'])) {
-                    Response::sendbody([
-                        "status" => 400,
-                        "message" => "Invalid image format! Only JPG, PNG and WEBP allowed."
-                    ]);
-                    return;
-                }
-            } else {
-                $extension = 'png'; 
-            }
-
-            $base64Image = str_replace(' ', '+', $base64Image);
-            $imageData = base64_decode($base64Image);
-
-            if ($imageData === false) {
-                Response::sendbody([
-                    "status" => 400,
-                    "message" => "Invalid image data provided."
-                ]);
-                return;
-            }
-
-            $fileName = "cat-" . $categoryUuid . "-" . time() . "." . $extension;
-            
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $filePath = $uploadDir . $fileName;
-
-            if (file_put_contents($filePath, $imageData) === false) {
-                Response::sendbody([
-                    "status" => 500,
-                    "message" => "Failed to save updated category image!"
-                ]);
-                return;
-            }
-
-            if (!empty($existingCategory['image_path'])) {
-                $oldFileName = basename($existingCategory['image_path']);
-                $oldFilePathToDelete = $uploadDir . $oldFileName;
-            }
-
-            $dbImagePath = "Storage/Category/" . $fileName;
-            $isNewImageUploaded = true;
-        }
+        $categoryName = self::$userdata->name ?? $existingCategory['name'];
 
         self::$conn->beginTransaction();
 
         try {
-            $categoryModel->updateCategory($categoryUuid, $categoryName, $dbImagePath);
+            $categoryModel->updateCategory($categoryId, $categoryName);
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "UPDATE_CATEGORY",
-                "category",
-                $categoryUuid,
                 "Updated category: {$categoryName}",
-                $existingCategory,
-                ["uuid" => $categoryUuid, "name" => $categoryName, "image_path" => $dbImagePath],
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
-
-            if ($isNewImageUploaded && $oldFilePathToDelete && file_exists($oldFilePathToDelete)) {
-                @unlink($oldFilePathToDelete);
-            }
 
             Response::sendbody([
                 "status" => 200,
                 "message" => "Category updated successfully!",
                 "data" => [
-                    "uuid"       => $categoryUuid,
-                    "name"       => $categoryName,
-                    "image_path" => $dbImagePath
+                    "id"   => $categoryId,
+                    "name" => $categoryName
                 ]
             ]);
 
         } catch (Exception $e) {
             self::$conn->rollBack();
-
-            if ($isNewImageUploaded && file_exists($filePath)) {
-                @unlink($filePath);
-            }
 
             Response::sendbody([
                 "status"  => 500,
@@ -292,13 +232,15 @@ class Categorycontroller
     {
         $token = $this->input->validate("deleteCategory");
         $decodedToken = self::$auth->decode($token);
-        $username = $decodedToken->username ?? 'Unknown User';
+        $userId = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? null;
 
         $cData = self::$userdata;
         $categoryModel = new Category(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $existingCategory = $categoryModel->getCategoryByUuid($cData->uuid);
+        $categoryId = $cData->id ?? $cData->uuid ?? '';
+        $existingCategory = $categoryModel->getCategoryById($categoryId);
 
         if (!$existingCategory) {
             Response::sendbody([
@@ -311,32 +253,21 @@ class Categorycontroller
         self::$conn->beginTransaction();
 
         try {
-            $isDeleted = $categoryModel->deleteCategoryByUuid($cData->uuid);
+            $isDeleted = $categoryModel->deleteCategoryById($categoryId);
 
             if (!$isDeleted) {
                 throw new Exception("Failed to delete category from database.");
             }
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 'DELETE_CATEGORY',
-                'category',
-                $cData->uuid,
                 "Deleted category '{$existingCategory['name']}'",
-                $existingCategory,
-                null,
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
-
-          
-            if (!empty($existingCategory['image_path'])) {
-                $imageName = basename($existingCategory['image_path']);
-                $imageFilePath = __DIR__ . '/../../../Storage/Category/' . $imageName;
-                if (file_exists($imageFilePath)) {
-                    @unlink($imageFilePath);
-                }
-            }
 
             Response::sendbody([
                 "status"  => 200,

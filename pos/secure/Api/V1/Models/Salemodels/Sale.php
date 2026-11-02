@@ -14,199 +14,136 @@ class Sale
         $this->conn = $conn;
     }
 
-    public function getSalesHistory()
+    /**
+     * ရောင်းချမှု မှတ်တမ်းများအားလုံးကို ဆွဲထုတ်ရန်
+     */
+    public function getSalesHistory($branchId = null)
     {
-        $query = "SELECT 
-                    s.invoice_no, 
-                    s.payment_method, 
-                    MIN(s.created_at) as created_at,
-                    SUM(s.subtotal) as total_amount,
-                    SUM(s.quantity) as total_quantity
-                  FROM sale_records s
-                  GROUP BY s.invoice_no, s.payment_method
-                  ORDER BY created_at DESC";
-
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
-        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $responseList = [];
-        foreach ($results as $row) {
-            $responseList[] = [
-                'invoice_no'     => $row['invoice_no'],
-                'created_at'     => $row['created_at'],
-                'total_quantity' => (int)$row['total_quantity'],
-                'total_amount'   => (float)$row['total_amount'],
-                'payment_method' => $row['payment_method']
-            ];
+        if ($branchId) {
+            $query = "SELECT s.*, u.name as user_name, b.name as branch_name 
+                      FROM sales s
+                      LEFT JOIN users u ON s.user_id = u.id
+                      LEFT JOIN branches b ON s.branch_id = b.id
+                      WHERE s.branch_id = :branch_id
+                      ORDER BY s.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute([':branch_id' => $branchId]);
+        } else {
+            $query = "SELECT s.*, u.name as user_name, b.name as branch_name 
+                      FROM sales s
+                      LEFT JOIN users u ON s.user_id = u.id
+                      LEFT JOIN branches b ON s.branch_id = b.id
+                      ORDER BY s.created_at DESC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
         }
 
-        return $responseList;
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function getSaleDetailByInvoice($invoiceNo)
+    /**
+     * Invoice နံပါတ် သို့မဟုတ် Sale ID ဖြင့် အရောင်းအသေးစိတ်ကို ရှာရန်
+     */
+    public function getSaleDetailById($saleId)
     {
-        
-        $headerQuery = "SELECT 
-                            s.invoice_no, 
-                            s.payment_method, 
-                            s.created_username, 
-                            MIN(s.created_at) as created_at,
-                            SUM(s.subtotal) as total_amount,
-                            SUM(s.quantity) as total_quantity
-                        FROM sale_records s
-                        WHERE s.invoice_no = ?
-                        GROUP BY s.invoice_no, s.payment_method, s.created_username
+        $headerQuery = "SELECT s.*, u.name as user_name, b.name as branch_name 
+                        FROM sales s
+                        LEFT JOIN users u ON s.user_id = u.id
+                        LEFT JOIN branches b ON s.branch_id = b.id
+                        WHERE s.id = ? 
                         LIMIT 1";
 
         $stmtHeader = $this->conn->prepare($headerQuery);
-        $stmtHeader->execute([$invoiceNo]);
+        $stmtHeader->execute([$saleId]);
         $header = $stmtHeader->fetch(PDO::FETCH_ASSOC);
 
         if (!$header) {
             return null;
         }
 
-        // 2. Fetch Purchased Items
         $itemsQuery = "SELECT 
-                        sr.product_uuid, 
-                        sr.product_name, 
-                        sr.cost_price, 
-                        sr.unit_price, 
-                        sr.quantity, 
-                        sr.subtotal
-                       FROM sale_records sr
-                       WHERE sr.invoice_no = ?";
+                        si.*, 
+                        p.name as product_name, 
+                        p.barcode 
+                       FROM sale_items si
+                       LEFT JOIN products p ON si.product_id = p.id
+                       WHERE si.sale_id = ?";
 
         $stmtItems = $this->conn->prepare($itemsQuery);
-        $stmtItems->execute([$invoiceNo]);
-        $rawItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+        $stmtItems->execute([$saleId]);
+        $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
 
-        $itemList = [];
-        foreach ($rawItems as $item) {
-            $itemList[] = [
-                'product_uuid' => $item['product_uuid'],
-                'product_name' => $item['product_name'],
-                'cost_price'   => (float)$item['cost_price'],
-                'unit_price'   => (float)$item['unit_price'],
-                'price'        => (float)$item['unit_price'],
-                'quantity'     => (int)$item['quantity'],
-                'subtotal'     => (float)$item['subtotal']
-            ];
+        $header['items'] = $items;
+        return $header;
+    }
+
+    /**
+     * Sales နှင့် Sale Items ဇယားများထဲသို့ အချက်အလက်သွင်းရန်
+     */
+    public function createSale($saleId, $branchId, $userId, $totalAmount, $discount, $finalAmount, $paymentMethod, $items)
+    {
+        // 1. Insert into sales table
+        $salesQuery = "INSERT INTO sales (
+                        id, 
+                        branch_id, 
+                        user_id, 
+                        total_amount, 
+                        discount, 
+                        final_amount, 
+                        payment_method, 
+                        created_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+
+        $stmtSale = $this->conn->prepare($salesQuery);
+        $successSale = $stmtSale->execute([
+            $saleId,
+            $branchId,
+            $userId,
+            $totalAmount,
+            $discount,
+            $finalAmount,
+            $paymentMethod
+        ]);
+
+        if (!$successSale) {
+            throw new Exception("Failed to insert main sale record.");
         }
 
-        return [
-            'invoice_no'       => $header['invoice_no'],
-            'created_at'       => $header['created_at'],
-            'created_username' => $header['created_username'],
-            'payment_method'   => $header['payment_method'],
-            'total_amount'     => (float)$header['total_amount'],
-            'total_quantity'   => (int)$header['total_quantity'],
-            'items'            => $itemList
-        ];
-    }
-    
+        // 2. Insert into sale_items table
+        $itemQuery = "INSERT INTO sale_items (
+                        id, 
+                        sale_id, 
+                        product_id, 
+                        quantity, 
+                        unit_price, 
+                        subtotal
+                      ) VALUES (?, ?, ?, ?, ?, ?)";
 
-
-
-    // public function getSalesHistory()
-    // {
-    //     $summaryQuery = "SELECT 
-    //                         s.invoice_no, 
-    //                         s.payment_method, 
-    //                         s.created_username, 
-    //                         MIN(s.created_at) as created_at,
-    //                         SUM(s.subtotal) as total_amount,
-    //                         SUM(s.quantity) as total_quantity
-    //                      FROM sale_records s
-    //                      GROUP BY s.invoice_no, s.payment_method, s.created_username
-    //                      ORDER BY created_at DESC";
-
-    //     $stmt = $this->conn->prepare($summaryQuery);
-    //     $stmt->execute();
-    //     $salesSummary = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    //     if (empty($salesSummary)) {
-    //         return [];
-    //     }
-
-    //     $itemsQuery = "SELECT 
-    //                     sr.invoice_no, 
-    //                     sr.product_uuid, 
-    //                     sr.product_name, 
-    //                     sr.cost_price, 
-    //                     sr.unit_price as price, 
-    //                     sr.quantity, 
-    //                     sr.subtotal
-    //                    FROM sale_records sr";
-
-    //     $stmtItems = $this->conn->prepare($itemsQuery);
-    //     $stmtItems->execute();
-    //     $allItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
-
-    //     $groupedItems = [];
-    //     foreach ($allItems as $item) {
-    //         $groupedItems[$item['invoice_no']][] = [
-    //             'product_uuid'  => $item['product_uuid'],
-    //             'product_name'  => $item['product_name'],
-    //             'category_name' => 'General', 
-    //             'cost_price'    => (float)$item['cost_price'],
-    //             'price'         => (float)$item['price'],
-    //             'quantity'      => (int)$item['quantity'],
-    //             'subtotal'      => (float)$item['subtotal']
-    //         ];
-    //     }
-
-    //     $responseList = [];
-    //     foreach ($salesSummary as $summary) {
-    //         $invNo = $summary['invoice_no'];
-    //         $responseList[] = [
-    //             'invoice_no'       => $invNo,
-    //             'created_at'       => $summary['created_at'],
-    //             'created_username' => $summary['created_username'],
-    //             'payment_method'   => $summary['payment_method'],
-    //             'total_amount'     => (float)$summary['total_amount'],
-    //             'total_quantity'   => (int)$summary['total_quantity'],
-    //             'items'            => $groupedItems[$invNo] ?? []
-    //         ];
-    //     }
-    //     return $responseList;
-    // }
-
-
-    
-    public function createSaleRecords($invoiceNo, $paymentMethod, $createdUsername, $items)
-    {
-        $query = "INSERT INTO sale_records (
-                    invoice_no, 
-                    product_uuid, 
-                    product_name, 
-                    cost_price, 
-                    unit_price, 
-                    quantity, 
-                    subtotal, 
-                    payment_method, 
-                    created_username, 
-                    created_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-
-        $stmt = $this->conn->prepare($query);
+        $stmtItem = $this->conn->prepare($itemQuery);
 
         foreach ($items as $item) {
-            $success = $stmt->execute([
-                $invoiceNo,
-                $item->product_uuid,
-                $item->product_name,
-                $item->cost_price,
-                $item->price, 
-                $item->quantity,
-                $item->subtotal,
-                $paymentMethod,
-                $createdUsername
+            $itemId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+                mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+                mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+            );
+
+            $productId = $item->product_id ?? $item->id ?? '';
+            $quantity  = (int)($item->quantity ?? 0);
+            $unitPrice = (float)($item->unit_price ?? $item->price ?? 0.00);
+            $subtotal  = $quantity * $unitPrice;
+
+            $successItem = $stmtItem->execute([
+                $itemId,
+                $saleId,
+                $productId,
+                $quantity,
+                $unitPrice,
+                $subtotal
             ]);
 
-            if (!$success) {
-                throw new Exception("Failed to insert sale record for item: " . $item->product_name);
+            if (!$successItem) {
+                throw new Exception("Failed to insert sale item record for product ID: " . $productId);
             }
         }
 

@@ -33,15 +33,16 @@ class Salecontroller
     public function getSalesHistory()
     {
         $token = $this->input->validate("getSalesHistory");
-        self::$auth->decode($token);
+        $decodedToken = self::$auth->decode($token);
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         try {
             $saleModel = new Sale(self::$conn);
-            $salesData = $saleModel->getSalesHistory();
+            $salesData = $saleModel->getSalesHistory($branchId);
 
             Response::sendbody([
                 "status"  => 200,
-                "message" => "Sales history summary retrieved successfully",
+                "message" => "Sales history retrieved successfully",
                 "data"    => $salesData
             ]);
 
@@ -58,24 +59,24 @@ class Salecontroller
         $token = $this->input->validate("getSalesHistoryDetail");
         self::$auth->decode($token);
 
-        $invoiceNo = self::$userdata->invoice_no ?? null;
+        $saleId = self::$userdata->sale_id ?? self::$userdata->id ?? null;
 
-        if (empty($invoiceNo)) {
+        if (empty($saleId)) {
             Response::sendbody([
                 "status"  => 400,
-                "message" => "Invoice number is required!"
+                "message" => "Sale ID is required!"
             ]);
             return;
         }
 
         try {
             $saleModel = new Sale(self::$conn);
-            $saleDetail = $saleModel->getSaleDetailByInvoice($invoiceNo);
+            $saleDetail = $saleModel->getSaleDetailById($saleId);
 
             if (!$saleDetail) {
                 Response::sendbody([
                     "status"  => 404,
-                    "message" => "Sale record not found for invoice: " . $invoiceNo
+                    "message" => "Sale record not found for ID: " . $saleId
                 ]);
                 return;
             }
@@ -99,69 +100,114 @@ class Salecontroller
         $token = $this->input->validate("processCheckout");
         $decodedToken = self::$auth->decode($token);
         
-        $username = $decodedToken->username ?? 'Unknown';
-        $invoiceNo = self::$userdata->invoice_no;
-        $paymentMethod = self::$userdata->payment_method;
-        $items = self::$userdata->items;
+        $userId   = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
-        $saleModel = new Sale(self::$conn);
+        if (!$branchId || !$userId) {
+            Response::sendbody([
+                "status"  => 400,
+                "message" => "Branch ID and User ID are required for checkout!"
+            ]);
+            return;
+        }
+
+        $totalAmount   = (float)(self::$userdata->total_amount ?? 0.00);
+        $discount      = (float)(self::$userdata->discount ?? 0.00);
+        $finalAmount   = (float)(self::$userdata->final_amount ?? ($totalAmount - $discount));
+        $paymentMethod = self::$userdata->payment_method ?? 'Cash';
+        $items         = self::$userdata->items ?? [];
+
+        if (empty($items)) {
+            Response::sendbody([
+                "status"  => 400,
+                "message" => "No items provided for checkout!"
+            ]);
+            return;
+        }
+
+        $saleModel    = new Sale(self::$conn);
         $productModel = new Product(self::$conn);
-        $logModel = new Logs(self::$conn);
+        $logModel     = new Logs(self::$conn);
+
+        // Generate UUID for Sale ID (CHAR 36)
+        $saleId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
 
         self::$conn->beginTransaction();
 
         try {
+            // 1. Create Sale and Sale Items records
+            $saleModel->createSale($saleId, $branchId, $userId, $totalAmount, $discount, $finalAmount, $paymentMethod, $items);
 
-            $saleModel->createSaleRecords($invoiceNo, $paymentMethod, $username, $items);
-
+            // 2. Update Branch Stocks and Log Stock Movements (OUT)
             foreach ($items as $item) {
-                $currentProduct = $productModel->getProductByUuid($item->product_uuid);
+                $productId = $item->product_id ?? $item->id ?? '';
+                $quantity  = (int)($item->quantity ?? 0);
+
+                // Fetch current stock from branch_stocks table
+                $currentProduct = $productModel->getProductById($productId, $branchId);
                 
                 if ($currentProduct) {
-                    $newStock = $currentProduct['stock_quantity'] - $item->quantity;
+                    $currentStock = (int)($currentProduct['stock_quantity'] ?? 0);
+                    $newStock = $currentStock - $quantity;
+                    
                     if ($newStock < 0) {
-                        $newStock = 0; 
+                        throw new Exception("Insufficient stock for product: " . ($currentProduct['product_name'] ?? $productId));
                     }
 
-                    $productModel->updateProductStock($item->product_uuid, $newStock);
+                    // Update branch stocks
+                    $productModel->updateBranchStock($branchId, $productId, $newStock);
 
-                    $productModel->logStockTransaction(
-                        $item->product_uuid,
-                        $item->product_name,
-                        $currentProduct['category_name'] ?? 'General',
-                        'OUT',
-                        $item->quantity,
-                        $username
+                    // Generate UUID for stock movement
+                    $movementId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                        mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+                        mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+                        mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
                     );
+
+                    // Log stock movement (OUT)
+                    $productModel->logStockMovement(
+                        $movementId,
+                        $branchId,
+                        $productId,
+                        $userId,
+                        'OUT',
+                        $quantity,
+                        "Sale Checkout - Sale ID: {$saleId}"
+                    );
+                } else {
+                    throw new Exception("Product not found in inventory for ID: " . $productId);
                 }
             }
 
+            // 3. Log Audit Activity
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 'CHECKOUT_SALE',
-                'sales',
-                $invoiceNo,
-                "Processed sale checkout for Invoice: {$invoiceNo} (Items count: " . count($items) . ")",
-                null,
-                [
-                    "invoice_no" => $invoiceNo,
-                    "total_amount" => self::$userdata->total_amount,
-                    "payment_method" => $paymentMethod
-                ],
-                $username
+                "Processed sale checkout with Final Amount: {$finalAmount} ({payments}: {$paymentMethod})",
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
 
             Response::sendbody([
-                "status" => 200,
-                "message" => "Checkout processed and sale records created successfully!"
+                "status"  => 200,
+                "message" => "Checkout processed successfully!",
+                "data"    => [
+                    "sale_id"      => $saleId,
+                    "final_amount" => $finalAmount
+                ]
             ]);
 
         } catch (Exception $e) {
             self::$conn->rollBack();
 
             Response::sendbody([
-                "status" => 500,
+                "status"  => 500,
                 "message" => "Checkout processing failed: " . $e->getMessage()
             ]);
         }

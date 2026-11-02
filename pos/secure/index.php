@@ -12,6 +12,7 @@ use Secure\Api\V1\Controller\Salecontroller;
 use Secure\Api\V1\Controller\Reportcontroller;
 use Secure\Api\V1\Controller\Suppliercontroller;
 use Secure\Api\V1\Controller\Shopcontroller;
+use Secure\Api\V1\Controller\Inventorycontroller;
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header("Access-Control-Allow-Origin: *");
@@ -40,160 +41,68 @@ if (empty($userdata) || empty($userdata->action)) {
 }
 
 Database::init();
-$conn = Database::getConnection();
 
 class Index 
 {
-    private $usercontroller;
-    private $categorycontroller;
-    private $productcontroller;
-    private $logcontroller;
-    private $salecontroller;
-    private $reportcontroller;
-    private $suppliercontroller;
-    private $shopcontroller;
+    private $userdata;
 
     public function __construct($userdata)
     {
-        $this->usercontroller = new Usercontroller($userdata);
-        $this->categorycontroller = new Categorycontroller($userdata);
-        $this->productcontroller = new Productcontroller($userdata);
-        $this->logcontroller = new Logcontroller($userdata);
-        $this->salecontroller = new Salecontroller($userdata);
-        $this->reportcontroller = new Reportcontroller($userdata);
-        $this->suppliercontroller = new Suppliercontroller($userdata);
-        $this->shopcontroller = new Shopcontroller($userdata);
-        $this->managecontrol($userdata);
+        $this->userdata = $userdata;
+        $this->managecontrol();
     }
 
-    public function managecontrol($userdata) 
+    public function managecontrol() 
     {
-        switch ($userdata->action) {
-
-            case '1000':
-                $this->shopcontroller->add_shop();
-                break;
-
-            case '1001':
-                $this->shopcontroller->update_shop();
-                break;
-
-            case '1003':
-                $this->shopcontroller->getShopList();
-                break;
-
-            case '1002':
-                $this->shopcontroller->delete_shop();
-                break;
+        switch ($this->userdata->action) {
+            // Shop Management
+            case '1000': (new Shopcontroller($this->userdata))->add_shop(); break;
+            case '1001': (new Shopcontroller($this->userdata))->update_shop(); break;
+            case '1002': (new Shopcontroller($this->userdata))->delete_shop(); break;
+            case '1003': (new Shopcontroller($this->userdata))->getShopList(); break;
             
-            case '1101':
-                $this->usercontroller->creation();
-                break;
-                
-            case '1102':
-                $this->usercontroller->login();
-                break;
+            // User & Auth Management
+            case '1101': (new Usercontroller($this->userdata))->creation(); break;
+            case '1102': (new Usercontroller($this->userdata))->login(); break;
+            case '1103': (new Usercontroller($this->userdata))->auth(); break;
+            case '1123': (new Usercontroller($this->userdata))->updateProfile(); break;
+            case '1124': (new Usercontroller($this->userdata))->getAllUsers(); break;
+            case '1125': (new Usercontroller($this->userdata))->updateUserInfo(); break;
+            case '1126': (new Usercontroller($this->userdata))->deleteUser(); break;
 
-            case '1103':
-                $this->usercontroller->auth();
-                break;
-
-            case '1104':
-                $this->categorycontroller->addCategory();
-                break;
-
+            // Category Management
+            case '1104': (new Categorycontroller($this->userdata))->addCategory(); break;
             case '1105':
             case '1109':
-            case '1112':
-                $this->categorycontroller->getCategoryList();
-                break;
-            case '1106':
-                $this->categorycontroller->updateCategory();
-                break;
+            case '1112': (new Categorycontroller($this->userdata))->getCategoryList(); break;
+            case '1106': (new Categorycontroller($this->userdata))->updateCategory(); break;
+            case '1117': (new Categorycontroller($this->userdata))->deleteCategory(); break;
 
-            case '1117':
-                $this->categorycontroller->deleteCategory();
-                break;
+            // Product Management
+            case '1108': (new Productcontroller($this->userdata))->addProduct(); break;
+            case '1110': (new Productcontroller($this->userdata))->getAllProducts(); break;
+            case '1111': (new Productcontroller($this->userdata))->getProductDetail(); break;
+            case '1114': (new Productcontroller($this->userdata))->updateProduct(); break;
+            case '1115': (new Productcontroller($this->userdata))->updateStock(); break;
+            case '1116': (new Productcontroller($this->userdata))->deleteProduct(); break;
+            case '1119': (new Productcontroller($this->userdata))->getStockTransactions(); break;
 
-            case '1108':
-                $this->productcontroller->addProduct();
-                break;
+            // Logs Management
+            case '1118': (new Logcontroller($this->userdata))->getLogs(); break;
 
-            case '1110':
-                $this->productcontroller->getAllProducts();
-                break;
+            // Sale Management
+            case '1120': (new Salecontroller($this->userdata))->processCheckout(); break;
+            case '1121': (new Salecontroller($this->userdata))->getSalesHistoryDetail(); break;
+            case '1122': (new Salecontroller($this->userdata))->getSalesHistory(); break;
 
-            case '1111':
-                $this->productcontroller->getProductDetail();
-                break;
+            // Report Management
+            case '1127': (new Reportcontroller($this->userdata))->getDashboardSummary(); break;
 
-            case '1114':
-                $this->productcontroller->updateProduct();
-                break;
-
-            case '1115':
-                $this->productcontroller->updateStock();
-                break;
-
-            case '1116':
-                $this->productcontroller->deleteProduct();
-                break;
-
-            case '1118':
-                $this->logcontroller->getLogs();
-                break;
-
-            case '1119':
-                $this->productcontroller->getStockTransactions(); 
-                break;
-
-            case '1120':
-                $this->salecontroller->processCheckout(); 
-                break;
-
-            case '1121':
-                $this->salecontroller->getSalesHistoryDetail(); 
-                break;
-
-            case '1122':
-                $this->salecontroller->getSalesHistory(); 
-                break;
-
-            case '1123':
-                $this->usercontroller->updateProfile();
-                break;
-
-            case '1124':
-                $this->usercontroller->getAllUsers();
-                break;   
-
-            case '1125':
-                $this->usercontroller->updateUserInfo();
-                break;
-
-            case '1126':
-                $this->usercontroller->deleteUser();
-                break;
-
-            case '1127':
-                $this->reportcontroller->getDashboardSummary();
-                break;
-
-            case '1128':
-                $this->suppliercontroller->addsupplier();
-                break;
-
-            case '1129':
-                $this->suppliercontroller->getSupplierList();
-                break;
-        
-           case '1130':
-                $this->suppliercontroller->updateSupplier();
-                break;
-
-            case '1131':
-                $this->suppliercontroller->deleteSupplier();
-                break;
+            // Supplier Management
+            case '1128': (new Suppliercontroller($this->userdata))->addsupplier(); break;
+            case '1129': (new Suppliercontroller($this->userdata))->getSupplierList(); break;
+            case '1130': (new Suppliercontroller($this->userdata))->updateSupplier(); break;
+            case '1131': (new Suppliercontroller($this->userdata))->deleteSupplier(); break;
 
             default:
                 Response::sendbody([
@@ -205,4 +114,4 @@ class Index
     }
 }
 
-$obj = new Index($userdata);
+new Index($userdata);

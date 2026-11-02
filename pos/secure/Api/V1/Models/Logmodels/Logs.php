@@ -14,45 +14,73 @@ class Logs
         $this->conn = $conn;
     }
 
-    public function logActivity($action, $module, $recordId, $description, $oldValues = null, $newValues = null, $username = 'System')
+    /**
+     * Activity Log အသစ်ထည့်သွင်းရန်
+     */
+    public function logActivity($branchId, $userId, $action, $description, $ipAddress = null)
     {
-        $query = "INSERT INTO logs (
+        // UUID (CHAR(36)) ဖန်တီးရန်
+        $id = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+
+        $query = "INSERT INTO activity_logs (
+                    id, 
+                    branch_id, 
+                    user_id, 
                     action, 
-                    module, 
-                    record_id, 
                     description, 
-                    old_values, 
-                    new_values, 
-                    created_username, 
+                    ip_address, 
                     created_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+                  ) VALUES (?, ?, ?, ?, ?, ?, NOW())";
 
         $stmt = $this->conn->prepare($query);
 
-        $oldJson = $oldValues !== null ? json_encode($oldValues, JSON_UNESCAPED_UNICODE) : null;
-        $newJson = $newValues !== null ? json_encode($newValues, JSON_UNESCAPED_UNICODE) : null;
-
         $success = $stmt->execute([
+            $id,
+            $branchId,
+            $userId,
             $action,
-            $module,
-            $recordId,
             $description,
-            $oldJson,
-            $newJson,
-            $username
+            $ipAddress
         ]);
 
         if (!$success) {
-            throw new Exception("Failed to insert system log record.");
+            throw new Exception("Failed to insert activity log record.");
         }
 
         return true;
     }
 
-    public function getLogs($limit = 100, $offset = 0)
+    /**
+     * Logs များကို ဆွဲထုတ်ရန် (Branch အလိုက် သို့မဟုတ် အားလုံး)
+     */
+    public function getLogs($branchId = null, $limit = 100, $offset = 0)
     {
-        $query = "SELECT * FROM logs ORDER BY id DESC LIMIT :limit OFFSET :offset";
-        $stmt = $this->conn->prepare($query);
+        if ($branchId) {
+            $query = "SELECT al.*, u.name as user_name, b.name as branch_name 
+                      FROM activity_logs al
+                      LEFT JOIN users u ON al.user_id = u.id
+                      LEFT JOIN branches b ON al.branch_id = b.id
+                      WHERE al.branch_id = :branch_id 
+                      ORDER BY al.created_at DESC 
+                      LIMIT :limit OFFSET :offset";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindValue(':branch_id', $branchId, PDO::PARAM_STR);
+        } else {
+            $query = "SELECT al.*, u.name as user_name, b.name as branch_name 
+                      FROM activity_logs al
+                      LEFT JOIN users u ON al.user_id = u.id
+                      LEFT JOIN branches b ON al.branch_id = b.id
+                      ORDER BY al.created_at DESC 
+                      LIMIT :limit OFFSET :offset";
+            $stmt = $this->conn->prepare($query);
+        }
+
         $stmt->bindValue(':limit', (int) $limit, PDO::PARAM_INT);
         $stmt->bindValue(':offset', (int) $offset, PDO::PARAM_INT);
         $stmt->execute();

@@ -32,23 +32,24 @@ class Productcontroller
     public function getStockTransactions()
     {
         $token = $this->input->validate("getStockTransactions");
-        self::$auth->decode($token);
+        $decodedToken = self::$auth->decode($token);
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         $productModel = new Product(self::$conn);
 
         try {
-            $transactions = $productModel->getStockTransactions();
+            $transactions = $productModel->getStockMovements($branchId);
 
             Response::sendbody([
                 "status"  => 200,
-                "message" => "Stock transactions retrieved successfully!",
+                "message" => "Stock movements retrieved successfully!",
                 "data"    => $transactions
             ]);
 
         } catch (Exception $e) {
             Response::sendbody([
                 "status"  => 500,
-                "message" => "Failed to retrieve stock transactions: " . $e->getMessage()
+                "message" => "Failed to retrieve stock movements: " . $e->getMessage()
             ]);
         }
     }
@@ -58,12 +59,23 @@ class Productcontroller
         $token = $this->input->validate("updateStock");
         $decodedToken = self::$auth->decode($token);
         $username = $decodedToken->username ?? 'Unknown User';
+        $userId   = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
+
+        if (!$branchId) {
+            Response::sendbody([
+                "status"  => 400,
+                "message" => "Branch ID is required for stock updates!"
+            ]);
+            return;
+        }
 
         $pData = self::$userdata;
         $productModel = new Product(self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $oldProduct = $productModel->getProductByUuid($pData->uuid);
+        $productId = $pData->id ?? $pData->uuid ?? '';
+        $oldProduct = $productModel->getProductById($productId, $branchId);
 
         if (!$oldProduct) {
             Response::sendbody([
@@ -76,47 +88,42 @@ class Productcontroller
         self::$conn->beginTransaction();
 
         try {
-            $isUpdated = $productModel->updateProductStock($pData->uuid, $pData->new_stock);
+            $isUpdated = $productModel->updateBranchStock($branchId, $productId, $pData->new_stock);
 
             if (!$isUpdated) {
-                throw new Exception("Failed to update stock in products table.");
+                throw new Exception("Failed to update stock in branch_stocks table.");
             }
 
-            $productName  = $oldProduct['product_name'] ?? '';
-            $categoryName = $oldProduct['category_name'] ?? '';
-            
-            $stockLogged = $productModel->logStockTransaction(
-                $pData->uuid,
-                $productName,
-                $categoryName,
+            $movementId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+                mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+                mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+            );
+
+            $stockLogged = $productModel->logStockMovement(
+                $movementId,
+                $branchId,
+                $productId,
+                $userId,
                 $pData->type,
                 $pData->adjustment,
-                $username
+                $pData->note ?? 'Stock adjustment'
             );
 
             if (!$stockLogged) {
-                throw new Exception("Failed to log record in stock_transactions table.");
+                throw new Exception("Failed to log record in stock_movements table.");
             }
 
-            $logAction      = (strtoupper($pData->type) === 'IN') ? 'STOCK_IN' : 'STOCK_OUT';
+            $productName = $oldProduct['product_name'] ?? '';
             $logDescription = "Stock " . (strtoupper($pData->type) === 'IN' ? 'added' : 'reduced') . 
                               " by {$pData->adjustment} for '{$productName}' (New Stock: {$pData->new_stock})";
             
-            $oldValues = ["stock_quantity" => $oldProduct['stock_quantity']];
-            $newValues = [
-                "stock_quantity" => $pData->new_stock, 
-                "adjustment"     => $pData->adjustment, 
-                "type"           => $pData->type
-            ];
-
             $logModel->logActivity(
-                $logAction,
-                'stock',
-                $pData->uuid,
+                $branchId,
+                $userId,
+                (strtoupper($pData->type) === 'IN' ? 'STOCK_IN' : 'STOCK_OUT'),
                 $logDescription,
-                $oldValues,
-                $newValues,
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
@@ -125,8 +132,8 @@ class Productcontroller
                 "status"  => 200,
                 "message" => "Stock updated and recorded successfully!",
                 "data"    => [
-                    "uuid"      => $pData->uuid,
-                    "new_stock" => $pData->new_stock
+                    "product_id" => $productId,
+                    "new_stock"  => $pData->new_stock
                 ]
             ]);
 
@@ -143,13 +150,15 @@ class Productcontroller
     {
         $token = $this->input->validate("deleteProduct");
         $decodedToken = self::$auth->decode($token);
-        $username = $decodedToken->username ?? 'Unknown User';
+        $userId   = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         $pData = self::$userdata;
         $productModel = new Product(self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $existingProduct = $productModel->getProductByUuid($pData->uuid);
+        $productId = $pData->id ?? $pData->uuid ?? '';
+        $existingProduct = $productModel->getProductById($productId, $branchId);
 
         if (!$existingProduct) {
             Response::sendbody([
@@ -162,31 +171,21 @@ class Productcontroller
         self::$conn->beginTransaction();
 
         try {
-            $isDeleted = $productModel->deleteProductByUuid($pData->uuid);
+            $isDeleted = $productModel->deleteProductById($productId);
 
             if (!$isDeleted) {
                 throw new Exception("Failed to delete product from database.");
             }
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 'DELETE_PRODUCT',
-                'product',
-                $pData->uuid,
                 "Deleted product '{$existingProduct['product_name']}'",
-                $existingProduct,
-                null,
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
-
-            if (!empty($existingProduct['image_path'])) {
-                $imageName = basename($existingProduct['image_path']);
-                $imageFilePath = __DIR__ . '/../../../Storage/Products/' . $imageName;
-                if (file_exists($imageFilePath)) {
-                    @unlink($imageFilePath);
-                }
-            }
 
             Response::sendbody([
                 "status"  => 200,
@@ -205,12 +204,13 @@ class Productcontroller
     public function getAllProducts()
     {
         $token = $this->input->validate("getAllProducts");
-        self::$auth->decode($token);
+        $decodedToken = self::$auth->decode($token);
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         $productModel = new Product(self::$conn);
 
         try {
-            $products = $productModel->getAllProducts();
+            $products = $productModel->getAllProducts($branchId);
 
             Response::sendbody([
                 "status"  => 200,
@@ -229,13 +229,14 @@ class Productcontroller
     public function getProductDetail()
     {
         $token = $this->input->validate("getProductDetail");
-        self::$auth->decode($token);
+        $decodedToken = self::$auth->decode($token);
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
-        $uuid = self::$userdata->uuid;
+        $productId = self::$userdata->id ?? self::$userdata->uuid ?? '';
         $productModel = new Product(self::$conn);
 
         try {
-            $product = $productModel->getProductByUuid($uuid);
+            $product = $productModel->getProductById($productId, $branchId);
 
             if (!$product) {
                 Response::sendbody([
@@ -263,13 +264,15 @@ class Productcontroller
     {
         $token = $this->input->validate("updateProduct");
         $decodedToken = self::$auth->decode($token);
-        $username = $decodedToken->username ?? 'Unknown User';
+        $userId   = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         $pData = self::$userdata;
         $productModel = new Product(self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $oldProductData = $productModel->getProductByUuid($pData->uuid);
+        $productId = $pData->id ?? $pData->uuid ?? '';
+        $oldProductData = $productModel->getProductById($productId, $branchId);
 
         if (!$oldProductData) {
             Response::sendbody([
@@ -279,79 +282,13 @@ class Productcontroller
             return;
         }
 
-        $imagePath = $oldProductData['image_path'];
-        $isNewImageUploaded = false;
-        $oldFilePathToDelete = null;
-
-        $uploadDir = __DIR__ . '/../../../Storage/Products/';
-
-        if (!empty($pData->image_base64)) {
-            $base64Image = $pData->image_base64;
-
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
-                $base64Image = substr($base64Image, strpos($base64Image, ',') + 1);
-                $extension = strtolower($type[1]);
-                
-                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'])) {
-                    Response::sendbody([
-                        "status" => 400,
-                        "message" => "Invalid image format! Only JPG, PNG and WEBP allowed."
-                    ]);
-                    return;
-                }
-            } else {
-                $extension = 'png';
-            }
-
-            $base64Image = str_replace(' ', '+', $base64Image);
-            $imageData = base64_decode($base64Image);
-
-            if ($imageData === false) {
-                Response::sendbody([
-                    "status" => 400,
-                    "message" => "Invalid image data provided."
-                ]);
-                return;
-            }
-
-            $fileName = "prod-" . $pData->uuid . "-" . time() . "." . $extension;
-
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $filePath = $uploadDir . $fileName;
-
-            if (file_put_contents($filePath, $imageData) === false) {
-                Response::sendbody([
-                    "status" => 500,
-                    "message" => "Failed to save updated product image!"
-                ]);
-                return;
-            }
-
-            // မူလဟောင်း ပုံဖိုင်ရှိခဲ့လျှင် ဖျက်ရန် စီစဉ်ခြင်း (Categorycontroller ပုံစံအတိုင်း)
-            if (!empty($oldProductData['image_path'])) {
-                $oldFileName = basename($oldProductData['image_path']);
-                $oldFilePathToDelete = $uploadDir . $oldFileName;
-            }
-
-            $imagePath = "Storage/Products/" . $fileName;
-            $isNewImageUploaded = true;
-        }
-
         $updateData = [
-            'uuid'           => $pData->uuid,
-            'category_name'  => $pData->category_name,
-            'barcode'        => $pData->barcode,
-            'product_name'   => $pData->product_name,
-            'cost_price'     => $pData->cost_price,
-            'unit_price'     => $pData->unit_price,
-            'stock_quantity' => $pData->stock_quantity,
-            'brand'          => $pData->brand,
-            'model'          => $pData->model,
-            'description'    => $pData->description,
-            'image_path'     => $imagePath
+            'id'           => $productId,
+            'category_id'  => $pData->category_id,
+            'barcode'      => $pData->barcode,
+            'product_name' => $pData->product_name,
+            'cost_price'   => $pData->cost_price,
+            'unit_price'   => $pData->unit_price
         ];
 
         self::$conn->beginTransaction();
@@ -361,21 +298,14 @@ class Productcontroller
 
             if ($isUpdated) {
                 $logModel->logActivity(
+                    $branchId,
+                    $userId,
                     'UPDATE_PRODUCT',
-                    'product',
-                    $pData->uuid,
                     "Updated product info for '{$pData->product_name}'",
-                    $oldProductData,
-                    $updateData,
-                    $username
+                    $_SERVER['REMOTE_ADDR'] ?? null
                 );
 
                 self::$conn->commit();
-
-                // ပုံအသစ် အောင်မြင်စွာ update ပြီးမှ မူလပုံဟောင်းကို ဖြတ်ထုတ်ခြင်း
-                if ($isNewImageUploaded && $oldFilePathToDelete && file_exists($oldFilePathToDelete)) {
-                    @unlink($oldFilePathToDelete);
-                }
 
                 Response::sendbody([
                     "status"  => 200,
@@ -392,10 +322,6 @@ class Productcontroller
         } catch (Exception $e) {
             self::$conn->rollBack();
 
-            if ($isNewImageUploaded && file_exists($filePath)) {
-                @unlink($filePath);
-            }
-
             Response::sendbody([
                 "status"  => 500,
                 "message" => "Error updating product: " . $e->getMessage()
@@ -406,9 +332,9 @@ class Productcontroller
     public function addProduct()
     {
         $token = $this->input->validate("addProduct");
-
-        $decodedData = self::$auth->decode($token);
-        $username = $decodedData->username ?? 'Admin';
+        $decodedToken = self::$auth->decode($token);
+        $userId   = $decodedToken->id ?? null;
+        $branchId = self::$userdata->branch_id ?? $decodedToken->branch_id ?? null;
 
         $productModel = new Product(self::$conn);
         $logModel = new Logs(self::$conn);
@@ -421,87 +347,58 @@ class Productcontroller
             return;
         }
 
-        $productUuid = !empty(self::$userdata->uuid) ? self::$userdata->uuid : bin2hex(random_bytes(16));
-        $dbImagePath = null;
-
-        $uploadDir = __DIR__ . '/../../../Storage/Products/';
-
-        if (!empty(self::$userdata->image_base64)) {
-            $base64Image = self::$userdata->image_base64;
-
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
-                $base64Image = substr($base64Image, strpos($base64Image, ',') + 1);
-                $extension = strtolower($type[1]);
-                
-                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'])) {
-                    $extension = 'jpg';
-                }
-            } else {
-                $extension = 'jpg';
-            }
-
-            $base64Image = str_replace(' ', '+', $base64Image);
-            $imageData = base64_decode($base64Image);
-
-            if ($imageData !== false) {
-                $fileName = "prod-" . $productUuid . "-" . time() . "." . $extension;
-
-                if (!file_exists($uploadDir)) {
-                    mkdir($uploadDir, 0777, true);
-                }
-
-                $filePath = $uploadDir . $fileName;
-
-                if (file_put_contents($filePath, $imageData) !== false) {
-                    $dbImagePath = "Storage/Products/" . $fileName;
-                }
-            }
-        }
+        $productId = !empty(self::$userdata->id) ? self::$userdata->id : (!empty(self::$userdata->uuid) ? self::$userdata->uuid : sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        ));
 
         self::$conn->beginTransaction();
 
         try {
             $productData = [
-                "uuid"              => $productUuid,
-                "category_name"     => self::$userdata->category_name,
-                "name"              => self::$userdata->product_name ?? '',
-                "barcode"           => self::$userdata->barcode ?? null,
-                "cost_price"        => self::$userdata->cost_price ?? 0.00,
-                "sell_price"        => self::$userdata->unit_price ?? 0.00,
-                "stock_quantity"    => self::$userdata->stock_quantity ?? 0,
-                "brand"             => self::$userdata->brand ?? null,
-                "model"             => self::$userdata->model ?? null,
-                "description"       => self::$userdata->description ?? null,
-                "image_path"        => $dbImagePath,
-                "created_user_name" => $username
+                "id"             => $productId,
+                "category_id"    => self::$userdata->category_id ?? null,
+                "name"           => self::$userdata->product_name ?? '',
+                "barcode"        => self::$userdata->barcode ?? null,
+                "cost_price"     => self::$userdata->cost_price ?? 0.00,
+                "sell_price"     => self::$userdata->unit_price ?? 0.00,
+                "stock_quantity" => self::$userdata->stock_quantity ?? 0
             ];
 
             $productModel->createProduct($productData);
 
             $initialStock = (int) ($productData['stock_quantity']);
-            if ($initialStock > 0) {
-                $stockLogged = $productModel->logStockTransaction(
-                    $productUuid,
-                    $productData['name'],
-                    $productData['category_name'],
+            if ($initialStock > 0 && $branchId) {
+                $productModel->updateBranchStock($branchId, $productId, $initialStock);
+
+                $movementId = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                    mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+                    mt_rand(0, 0x0fff) | 0x4000, mt_rand(0, 0x3fff) | 0x8000,
+                    mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+                );
+
+                $stockLogged = $productModel->logStockMovement(
+                    $movementId,
+                    $branchId,
+                    $productId,
+                    $userId,
                     'IN',           
                     $initialStock,   
-                    $username
+                    'Initial stock on creation'
                 );
 
                 if (!$stockLogged) {
-                    throw new Exception("Failed to log initial stock transaction.");
+                    throw new Exception("Failed to log initial stock movement.");
                 }
             }
 
             $logModel->logActivity(
+                $branchId,
+                $userId,
                 "ADD_PRODUCT",
-                "product",
-                $productUuid,
                 "Created product: {$productData['name']}",
-                null,
-                $productData,
-                $username
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
@@ -514,10 +411,6 @@ class Productcontroller
 
         } catch (Exception $e) {
             self::$conn->rollBack();
-
-            if ($dbImagePath && file_exists(__DIR__ . '/../../../Storage/Products/' . basename($dbImagePath))) {
-                @unlink(__DIR__ . '/../../../Storage/Products/' . basename($dbImagePath));
-            }
 
             Response::sendbody([
                 "status"  => 500,

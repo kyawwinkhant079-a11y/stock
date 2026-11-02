@@ -36,18 +36,18 @@ class Shopcontroller
         $shopModel = new Shop(self::$userdata, self::$conn);
 
         try {
-            $shops = $shopModel->getAllShops();
+            $branches = $shopModel->getAllBranches();
 
             Response::sendbody([
                 "status"  => 200,
-                "message" => "Shops retrieved successfully!",
-                "data"    => $shops
+                "message" => "Branches retrieved successfully!",
+                "data"    => $branches
             ]);
 
         } catch (Exception $e) {
             Response::sendbody([
                 "status"  => 500,
-                "message" => "Failed to retrieve shops: " . $e->getMessage()
+                "message" => "Failed to retrieve branches: " . $e->getMessage()
             ]);
         }
     }
@@ -58,101 +58,49 @@ class Shopcontroller
 
         $decodedData = self::$auth->decode($token);
         $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null; // Database တွင် user_id လိုအပ်ပါက သုံးရန်
 
         $shopModel = new Shop(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $shopUuid    = bin2hex(random_bytes(16));
-        $shopName    = self::$userdata->shop_name ?? '';
-        $ownerName   = self::$userdata->owner_name ?? '';
-        $phoneNo     = self::$userdata->phone_no ?? '';
+        // Database schema တွင် id သည် CHAR(36) (UUID) ဖြစ်ပါသည်
+        $branchId    = sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+
+        $branchName  = self::$userdata->shop_name ?? '';
         $address     = self::$userdata->address ?? '';
-        $dbImagePath = null;
-
-        if (!empty(self::$userdata->image_base64)) {
-            $base64Image = self::$userdata->image_base64;
-
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
-                $base64Image = substr($base64Image, strpos($base64Image, ',') + 1);
-                $extension = strtolower($type[1]);
-                
-                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'])) {
-                    Response::sendbody([
-                        "status" => 400,
-                        "message" => "Invalid image format! Only JPG, PNG and WEBP allowed."
-                    ]);
-                    return;
-                }
-            } else {
-                $extension = 'png'; 
-            }
-
-            $base64Image = str_replace(' ', '+', $base64Image);
-            $imageData = base64_decode($base64Image);
-
-            if ($imageData === false) {
-                Response::sendbody([
-                    "status" => 400,
-                    "message" => "Invalid image data provided."
-                ]);
-                return;
-            }
-
-            $fileName = "shop-" . $shopUuid . "." . $extension;
-            
-            $uploadDir = __DIR__ . '/../../../Storage/Shop/';
-            
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $filePath = $uploadDir . $fileName;
-
-            if (file_put_contents($filePath, $imageData) === false) {
-                Response::sendbody([
-                    "status" => 500,
-                    "message" => "Failed to save shop image!"
-                ]);
-                return;
-            }
-
-            $dbImagePath = "Storage/Shop/" . $fileName;
-        }
+        $phone       = self::$userdata->phone_no ?? '';
 
         self::$conn->beginTransaction();
 
         try {
-            $shopModel->createShop($shopUuid, $shopName, $ownerName, $phoneNo, $address, $dbImagePath);
+            // branches ဇယားထဲသို့ ထည့်သွင်းခြင်း
+            $shopModel->createBranch($branchId, $branchName, $address, $phone);
 
+            // Activity log မှတ်တမ်းတင်ခြင်း
             $logModel->logActivity(
-                "ADD_SHOP",
-                "shop",
-                $shopUuid,
-                "Created shop: {$shopName}",
-                null,
-                [
-                    "uuid"       => $shopUuid,
-                    "shop_name"  => $shopName,
-                    "owner_name" => $ownerName,
-                    "phone_no"   => $phoneNo,
-                    "address"    => $address,
-                    "image_path" => $dbImagePath
-                ],
-                $username
+                $branchId, // branch_id
+                $userId,   // user_id
+                "ADD_BRANCH",
+                "Created branch/shop: {$branchName}",
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
 
             Response::sendbody([
                 "status" => 200,
-                "message" => "Shop created successfully!",
+                "message" => "Branch created successfully!",
                 "data" => [
-                    "uuid"       => $shopUuid,
-                    "shop_name"  => $shopName,
-                    "owner_name" => $ownerName,
-                    "phone_no"   => $phoneNo,
-                    "address"    => $address,
-                    "image_path" => $dbImagePath
+                    "id"       => $branchId,
+                    "name"     => $branchName,
+                    "address"  => $address,
+                    "phone"    => $phone
                 ]
             ]);
 
@@ -161,7 +109,7 @@ class Shopcontroller
 
             Response::sendbody([
                 "status" => 500,
-                "message" => "Failed to add shop: " . $e->getMessage()
+                "message" => "Failed to add branch: " . $e->getMessage()
             ]);
         }
     }
@@ -172,137 +120,58 @@ class Shopcontroller
 
         $decodedData = self::$auth->decode($token);
         $username = $decodedData->username ?? 'Unknown';
+        $userId   = $decodedData->id ?? null;
 
         $shopModel = new Shop(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $existingShop = $shopModel->getShopByUuid(self::$userdata->uuid);
+        $branchId = self::$userdata->id ?? self::$userdata->uuid ?? '';
+        $existingBranch = $shopModel->getBranchById($branchId);
 
-        if (!$existingShop) {
+        if (!$existingBranch) {
             Response::sendbody([
                 "status" => 404,
-                "message" => "Shop not found!"
+                "message" => "Branch not found!"
             ]);
             return;
         }
 
-        $shopUuid    = self::$userdata->uuid;
-        $shopName    = self::$userdata->shop_name ?? $existingShop['shop_name'];
-        $ownerName   = self::$userdata->owner_name ?? $existingShop['owner_name'];
-        $phoneNo     = self::$userdata->phone_no ?? $existingShop['phone_no'];
-        $address     = self::$userdata->address ?? $existingShop['address'];
-        $dbImagePath = $existingShop['image_path'];
-        
-        $isNewImageUploaded = false;
-        $oldFilePathToDelete = null;
-
-        $uploadDir = __DIR__ . '/../../../Storage/Shop/';
-
-        if (!empty(self::$userdata->image_base64)) {
-            $base64Image = self::$userdata->image_base64;
-
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
-                $base64Image = substr($base64Image, strpos($base64Image, ',') + 1);
-                $extension = strtolower($type[1]);
-                
-                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'])) {
-                    Response::sendbody([
-                        "status" => 400,
-                        "message" => "Invalid image format! Only JPG, PNG and WEBP allowed."
-                    ]);
-                    return;
-                }
-            } else {
-                $extension = 'png'; 
-            }
-
-            $base64Image = str_replace(' ', '+', $base64Image);
-            $imageData = base64_decode($base64Image);
-
-            if ($imageData === false) {
-                Response::sendbody([
-                    "status" => 400,
-                    "message" => "Invalid image data provided."
-                ]);
-                return;
-            }
-
-            $fileName = "shop-" . $shopUuid . "-" . time() . "." . $extension;
-            
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $filePath = $uploadDir . $fileName;
-
-            if (file_put_contents($filePath, $imageData) === false) {
-                Response::sendbody([
-                    "status" => 500,
-                    "message" => "Failed to save updated shop image!"
-                ]);
-                return;
-            }
-
-            if (!empty($existingShop['image_path'])) {
-                $oldFileName = basename($existingShop['image_path']);
-                $oldFilePathToDelete = $uploadDir . $oldFileName;
-            }
-
-            $dbImagePath = "Storage/Shop/" . $fileName;
-            $isNewImageUploaded = true;
-        }
+        $branchName = self::$userdata->shop_name ?? $existingBranch['name'];
+        $address    = self::$userdata->address ?? $existingBranch['address'];
+        $phone      = self::$userdata->phone_no ?? $existingBranch['phone'];
 
         self::$conn->beginTransaction();
 
         try {
-            $shopModel->updateShop($shopUuid, $shopName, $ownerName, $phoneNo, $address, $dbImagePath);
+            $shopModel->updateBranch($branchId, $branchName, $address, $phone);
 
             $logModel->logActivity(
-                "UPDATE_SHOP",
-                "shop",
-                $shopUuid,
-                "Updated shop: {$shopName}",
-                $existingShop,
-                [
-                    "uuid"       => $shopUuid,
-                    "shop_name"  => $shopName,
-                    "owner_name" => $ownerName,
-                    "phone_no"   => $phoneNo,
-                    "address"    => $address,
-                    "image_path" => $dbImagePath
-                ],
-                $username
+                $branchId,
+                $userId,
+                "UPDATE_BRANCH",
+                "Updated branch: {$branchName}",
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
 
-            if ($isNewImageUploaded && $oldFilePathToDelete && file_exists($oldFilePathToDelete)) {
-                @unlink($oldFilePathToDelete);
-            }
-
             Response::sendbody([
                 "status" => 200,
-                "message" => "Shop updated successfully!",
+                "message" => "Branch updated successfully!",
                 "data" => [
-                    "uuid"       => $shopUuid,
-                    "shop_name"  => $shopName,
-                    "owner_name" => $ownerName,
-                    "phone_no"   => $phoneNo,
-                    "address"    => $address,
-                    "image_path" => $dbImagePath
+                    "id"      => $branchId,
+                    "name"    => $branchName,
+                    "address" => $address,
+                    "phone"   => $phone
                 ]
             ]);
 
         } catch (Exception $e) {
             self::$conn->rollBack();
 
-            if ($isNewImageUploaded && file_exists($filePath)) {
-                @unlink($filePath);
-            }
-
             Response::sendbody([
                 "status" => 500,
-                "message" => "Failed to update shop: " . $e->getMessage()
+                "message" => "Failed to update branch: " . $e->getMessage()
             ]);
         }
     }
@@ -311,18 +180,19 @@ class Shopcontroller
     {
         $token = $this->input->validate("deleteShop");
         $decodedToken = self::$auth->decode($token);
-        $username = $decodedToken->username ?? 'Unknown User';
+        $userId = $decodedToken->id ?? null;
 
         $cData = self::$userdata;
         $shopModel = new Shop(self::$userdata, self::$conn);
         $logModel = new Logs(self::$conn);
 
-        $existingShop = $shopModel->getShopByUuid($cData->uuid);
+        $branchId = $cData->id ?? $cData->uuid ?? '';
+        $existingBranch = $shopModel->getBranchById($branchId);
 
-        if (!$existingShop) {
+        if (!$existingBranch) {
             Response::sendbody([
                 "status"  => 404,
-                "message" => "Shop not found!"
+                "message" => "Branch not found!"
             ]);
             return;
         }
@@ -330,42 +200,32 @@ class Shopcontroller
         self::$conn->beginTransaction();
 
         try {
-            $isDeleted = $shopModel->deleteShopByUuid($cData->uuid);
+            $isDeleted = $shopModel->deleteBranchById($branchId);
 
             if (!$isDeleted) {
-                throw new Exception("Failed to delete shop from database.");
+                throw new Exception("Failed to delete branch from database.");
             }
 
             $logModel->logActivity(
-                'DELETE_SHOP',
-                'shop',
-                $cData->uuid,
-                "Deleted shop '{$existingShop['shop_name']}'",
-                $existingShop,
                 null,
-                $username
+                $userId,
+                'DELETE_BRANCH',
+                "Deleted branch '{$existingBranch['name']}'",
+                $_SERVER['REMOTE_ADDR'] ?? null
             );
 
             self::$conn->commit();
 
-            if (!empty($existingShop['image_path'])) {
-                $imageName = basename($existingShop['image_path']);
-                $imageFilePath = __DIR__ . '/../../../Storage/Shop/' . $imageName;
-                if (file_exists($imageFilePath)) {
-                    @unlink($imageFilePath);
-                }
-            }
-
             Response::sendbody([
                 "status"  => 200,
-                "message" => "Shop deleted successfully!"
+                "message" => "Branch deleted successfully!"
             ]);
 
         } catch (Exception $e) {
             self::$conn->rollBack();
             Response::sendbody([
                 "status"  => 500,
-                "message" => "Error deleting shop: " . $e->getMessage()
+                "message" => "Error deleting branch: " . $e->getMessage()
             ]);
         }
     }
